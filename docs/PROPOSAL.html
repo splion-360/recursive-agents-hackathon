@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#11584d" />
+  <link rel="icon" href="data:," />
+  <title>Memory-Distilled Harness Plan</title>
+  <style>
+    :root {
+      --bg: #f3f5f1;
+      --paper: #fffefa;
+      --paper-2: #eaf0eb;
+      --paper-3: #f7f1e7;
+      --ink: #17231f;
+      --muted: #53625c;
+      --line: #cbd5ce;
+      --strong-line: #90a49a;
+      --green: #11584d;
+      --green-2: #0d7562;
+      --green-soft: #dcece5;
+      --rust: #a14828;
+      --rust-soft: #f4dfd4;
+      --amber: #925d04;
+      --amber-soft: #f7ebce;
+      --blue: #225d83;
+      --blue-soft: #dfeaf3;
+      --shadow: 0 18px 50px rgba(25, 44, 36, .09);
+      --radius: 10px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1412;
+        --paper: #141d1a;
+        --paper-2: #1a2823;
+        --paper-3: #28231c;
+        --ink: #edf5f1;
+        --muted: #a8bbb2;
+        --line: #304139;
+        --strong-line: #536a60;
+        --green: #7dd9b8;
+        --green-2: #98edcd;
+        --green-soft: #16362d;
+        --rust: #ff9c79;
+        --rust-soft: #3c241c;
+        --amber: #ffd080;
+        --amber-soft: #392d17;
+        --blue: #9bcff0;
+        --blue-soft: #1b3040;
+        --shadow: 0 18px 50px rgba(0,0,0,.28);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, color-mix(in srgb, var(--green) 4%, transparent) 1px, transparent 1px),
+        linear-gradient(color-mix(in srgb, var(--green) 4%, transparent) 1px, transparent 1px),
+        var(--bg);
+      background-size: 32px 32px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    a { color: var(--green); text-underline-offset: 3px; }
+    a:hover { color: var(--green-2); }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; }
+    .shell { width: min(1220px, calc(100% - 32px)); margin: 0 auto; padding: 34px 0 72px; }
+    .masthead {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(26px, 5vw, 56px);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--green);
+      box-shadow: var(--shadow);
+    }
+    .masthead::after {
+      content: "";
+      position: absolute;
+      width: 290px;
+      height: 290px;
+      right: -140px;
+      top: -150px;
+      border: 38px solid var(--green-soft);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .stamp, .tag, .eyebrow, .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .stamp { color: var(--green); font-size: .76rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    h1 { max-width: 920px; margin: 14px 0 18px; font-size: clamp(2.55rem, 6vw, 5.15rem); line-height: .97; letter-spacing: -.052em; }
+    .dek { max-width: 860px; color: var(--muted); font-size: clamp(1.04rem, 2vw, 1.24rem); margin-bottom: 26px; }
+    .thesis { max-width: 950px; background: var(--green-soft); border-left: 5px solid var(--green); padding: 17px 19px; font-weight: 680; }
+    .meta-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+    .pill { border: 1px solid var(--line); background: var(--paper-2); color: var(--muted); border-radius: 999px; padding: 7px 10px; font-size: .79rem; font-weight: 700; }
+    .layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 28px; margin-top: 30px; align-items: start; }
+    nav {
+      position: sticky; top: 18px; padding: 13px;
+      background: color-mix(in srgb, var(--paper) 95%, transparent);
+      border: 1px solid var(--line);
+    }
+    nav strong { display: block; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .1em; padding: 6px 9px 10px; }
+    nav a { display: block; color: var(--muted); text-decoration: none; padding: 8px 9px; border-radius: 7px; font-size: .86rem; }
+    nav a:hover, nav a.active { color: var(--ink); background: var(--green-soft); }
+    main { min-width: 0; }
+    section { scroll-margin-top: 22px; margin-bottom: 24px; padding: clamp(22px, 4vw, 40px); background: var(--paper); border: 1px solid var(--line); }
+    section > h2 { margin-bottom: 8px; font-size: clamp(1.7rem, 3.2vw, 2.55rem); line-height: 1.08; letter-spacing: -.028em; }
+    .section-lead { color: var(--muted); max-width: 800px; margin-bottom: 24px; }
+    .tag { display: inline-block; margin-bottom: 12px; padding: 6px 8px; background: var(--green-soft); color: var(--green); font-size: .69rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .tag.rust { background: var(--rust-soft); color: var(--rust); }
+    .tag.amber { background: var(--amber-soft); color: var(--amber); }
+    .tag.blue { background: var(--blue-soft); color: var(--blue); }
+    .two-col, .three-col { display: grid; gap: 15px; }
+    .two-col { grid-template-columns: 1fr 1fr; }
+    .three-col { grid-template-columns: repeat(3, 1fr); }
+    .card { border: 1px solid var(--line); padding: 20px; background: var(--paper); }
+    .card.tint { background: var(--paper-2); border-color: transparent; }
+    .card.warm { background: var(--paper-3); border-color: transparent; }
+    .card h3 { margin-bottom: 8px; font-size: 1.15rem; line-height: 1.24; }
+    .card h4 { margin: 14px 0 4px; font-size: .85rem; color: var(--green); }
+    .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+    .card ul { padding-left: 19px; }
+    .metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 11px; margin-top: 21px; }
+    .metric { min-height: 128px; padding: 17px; background: var(--paper-2); border-top: 3px solid var(--green); }
+    .metric.rust { border-top-color: var(--rust); }
+    .metric .value { display: block; margin-bottom: 7px; font: 700 1.82rem/1.05 Georgia, serif; }
+    .metric .label { color: var(--muted); font-size: .8rem; }
+    .result-chart { margin: 23px 0 8px; padding: 20px; background: var(--paper-2); }
+    .bar-row { display: grid; grid-template-columns: 180px minmax(0,1fr) 58px; gap: 12px; align-items: center; margin: 12px 0; }
+    .bar-label { color: var(--muted); font-size: .84rem; }
+    .track { height: 18px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+    .bar { height: 100%; background: var(--green); }
+    .bar.alt { background: var(--rust); }
+    .bar-value { font: 750 .83rem ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+    .fineprint { color: var(--muted); font-size: .77rem; margin-top: 15px; }
+    .callout { margin: 18px 0; padding: 18px; border: 1px solid var(--line); border-left: 5px solid var(--amber); background: var(--amber-soft); }
+    .callout.green { border-left-color: var(--green); background: var(--green-soft); }
+    .callout.risk { border-left-color: var(--rust); background: var(--rust-soft); }
+    .callout strong { display: block; margin-bottom: 4px; }
+    .definition { display: grid; grid-template-columns: 92px 1fr; gap: 14px; padding: 15px 0; border-top: 1px solid var(--line); }
+    .definition:last-child { border-bottom: 1px solid var(--line); }
+    .definition .key { color: var(--green); font: 800 .78rem/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .definition p { margin: 0; }
+    .component-list { display: grid; gap: 13px; }
+    .component { display: grid; grid-template-columns: 52px minmax(0,1fr); border: 1px solid var(--line); background: var(--paper); }
+    .component-num { display: grid; place-items: start center; padding-top: 20px; color: var(--green); font: 800 .8rem ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--paper-2); }
+    .component-body { padding: 18px 20px; }
+    .component-body h3 { margin-bottom: 10px; font-size: 1.18rem; }
+    .specs { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; }
+    .spec { padding-top: 11px; border-top: 2px solid var(--line); }
+    .spec b { display: block; margin-bottom: 5px; font-size: .74rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+    .spec p { margin: 0; font-size: .88rem; }
+    .diagram { margin: 22px 0; padding: 23px; background: var(--paper-2); border: 1px solid var(--line); }
+    .flow { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; align-items: stretch; }
+    .node { position: relative; padding: 15px; background: var(--paper); border: 1px solid var(--strong-line); min-height: 105px; }
+    .node::after { content: "→"; position: absolute; right: -18px; top: 36%; z-index: 2; color: var(--green); font-weight: 900; }
+    .node:nth-child(4)::after, .node:last-child::after { display: none; }
+    .node b { display: block; margin-bottom: 6px; }
+    .node span { color: var(--muted); font-size: .8rem; }
+    .memory-band { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .memory-band .node { border-top: 4px solid var(--green); min-height: 92px; }
+    .memory-band .node::after { display: none; }
+    .loopback { margin-top: 12px; padding: 11px 14px; text-align: center; border: 1px dashed var(--green); color: var(--green); font: 750 .8rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .table-wrap { overflow: visible; }
+    table { width: 100%; border-collapse: collapse; font-size: .87rem; }
+    th, td { padding: 13px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); background: var(--paper-2); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+    td:first-child { font-weight: 720; width: 21%; }
+    .condition-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; counter-reset: cond; }
+    .condition { counter-increment: cond; padding: 17px; background: var(--paper-2); }
+    .condition::before { content: "C" counter(cond); display: inline-block; margin-bottom: 8px; color: var(--green); font: 800 .74rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .condition h3 { margin-bottom: 6px; font-size: 1.02rem; }
+    .condition p { margin: 0; color: var(--muted); font-size: .86rem; }
+    .formula { padding: 18px; background: var(--green-soft); text-align: center; font: 700 clamp(.85rem,2vw,1rem)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .timeline { position: relative; padding-left: 28px; margin: 24px 0 6px; }
+    .timeline::before { content: ""; position: absolute; left: 7px; top: 7px; bottom: 7px; width: 2px; background: var(--line); }
+    .event { position: relative; padding: 0 0 23px 18px; }
+    .event:last-child { padding-bottom: 0; }
+    .event::before { content: ""; position: absolute; left: -25px; top: 6px; width: 11px; height: 11px; border-radius: 50%; background: var(--green); border: 3px solid var(--paper); box-shadow: 0 0 0 1px var(--green); }
+    .event time { color: var(--green); font: 800 .74rem ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    .event h3 { margin: 5px 0 4px; font: 700 1.03rem/1.25 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .event p { color: var(--muted); margin: 0; }
+    .risk-list { display: grid; gap: 10px; }
+    .risk-row { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 13px; padding: 15px; border: 1px solid var(--line); }
+    .risk-row b { color: var(--rust); }
+    .risk-row p { margin: 0; font-size: .86rem; }
+    .demo-steps { counter-reset: demo; display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+    .demo-step { counter-increment: demo; padding: 17px; background: var(--paper-2); }
+    .demo-step::before { content: "0" counter(demo); display: block; margin-bottom: 12px; color: var(--green); font: 800 .78rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .demo-step h3 { font-size: 1rem; margin-bottom: 5px; }
+    .demo-step p { color: var(--muted); font-size: .83rem; margin: 0; }
+    .source-list { columns: 2; column-gap: 30px; padding-left: 18px; }
+    .source-list li { break-inside: avoid; margin-bottom: 10px; color: var(--muted); font-size: .86rem; }
+    .source::before { content: "↗ "; }
+    .source { display: inline-block; margin-top: 7px; font-size: .74rem; font-weight: 750; text-decoration: none; }
+    @media (max-width: 970px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: relative; top: 0; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); padding: 8px; }
+      nav strong { display: none; }
+      nav a { text-align: center; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .node:nth-child(2)::after { display: none; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .demo-steps { grid-template-columns: 1fr 1fr; }
+      .risk-row { grid-template-columns: 110px 1fr; }
+      .risk-row p:last-child { grid-column: 2; }
+    }
+    @media (max-width: 690px) {
+      .shell { width: min(100% - 18px, 1220px); padding-top: 9px; }
+      .masthead, section { padding: 22px 17px; }
+      .masthead::after { display: none; }
+      h1 { font-size: 2.7rem; }
+      .two-col, .three-col, .metrics, .condition-grid, .demo-steps, .memory-band, .flow, .specs { grid-template-columns: 1fr; }
+      .node::after { content: "↓"; right: 50%; top: auto; bottom: -23px; }
+      .node:nth-child(2)::after { display: block; }
+      .node:nth-child(4)::after { display: none; }
+      .bar-row { grid-template-columns: 1fr 48px; gap: 8px; }
+      .bar-label { grid-column: 1 / -1; }
+      table, thead, tbody, tr, th, td { display: block; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      tr { margin-bottom: 12px; border: 1px solid var(--line); padding: 10px; }
+      td { border: 0; padding: 7px 8px; }
+      td:first-child { width: auto; color: var(--green); }
+      td::before { content: attr(data-label); display: block; color: var(--muted); font: 750 .67rem ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 2px; }
+      .risk-row { grid-template-columns: 1fr; }
+      .risk-row p:last-child { grid-column: auto; }
+      .source-list { columns: 1; }
+      .definition { grid-template-columns: 1fr; gap: 5px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      body { background: white; }
+      .shell { width: 100%; padding: 0; }
+      nav { display: none; }
+      .layout { display: block; }
+      .masthead, section { box-shadow: none; break-inside: avoid-page; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead">
+      <div class="stamp">Hackathon research brief · 16 October 2026</div>
+      <h1>Can a harness live in memory instead of weights?</h1>
+      <p class="dek">A multimodal experiment inspired by <em>Harness-Zero</em>: let a strong reviewer repair a smaller student’s actions, distill those repairs into MemMachine, then remove the reviewer and measure whether retrieved behaviors preserve the gain.</p>
+      <div class="thesis">Recommendation: build the memory-distilled system first and treat fine-tuning as an optional stretch. The core claim is stronger for this venue if a fresh student improves on held-out ChartQA and MathVista tasks using reusable memories, with the reviewer absent at evaluation time.</div>
+      <div class="meta-row">
+        <span class="pill">Agent-as-harness</span>
+        <span class="pill">Multimodal VQA</span>
+        <span class="pill">Crusoe inference</span>
+        <span class="pill">MemMachine long-term memory</span>
+        <span class="pill">Friday AM → Saturday 10 PM</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav aria-label="Document sections">
+        <strong>Jump to</strong>
+        <a href="#verdict">Verdict</a>
+        <a href="#paper">Harness-Zero</a>
+        <a href="#proposal">Proposal</a>
+        <a href="#components">Components</a>
+        <a href="#tasks">Task suite</a>
+        <a href="#loop">Closed loop</a>
+        <a href="#comparison">Comparison</a>
+        <a href="#theme">Theme fit</a>
+        <a href="#sponsors">Sponsors</a>
+        <a href="#evaluation">Metrics</a>
+        <a href="#demo">Demo arc</a>
+        <a href="#risks">Risks</a>
+        <a href="#schedule">Schedule</a>
+        <a href="#sources">Sources</a>
+      </nav>
+
+      <main>
+        <section id="verdict">
+          <div class="tag">Decision brief</div>
+          <h2>Novel enough to stand out. Technical enough if the controls are rigorous.</h2>
+          <p class="section-lead">The idea is not “RAG over old answers.” It is a closed-loop transfer system with a privileged reviewer, structured behavior extraction, retrieval policy, contamination controls, and a held-out ablation study.</p>
+          <div class="two-col">
+            <article class="card tint">
+              <div class="tag">Novelty · strong</div>
+              <h3>The transfer medium changes</h3>
+              <p>The paper puts harness-induced behavior into model parameters. This project asks whether the same behavior can remain external, portable, inspectable, and revisable inside long-term memory. The modality also changes from the paper’s tool environments to visual reasoning.</p>
+            </article>
+            <article class="card warm">
+              <div class="tag rust">Technical defense</div>
+              <h3>The system must prove transfer, not retrieval</h3>
+              <p>Store no final benchmark answers in semantic memory. Retrieve procedural behaviors only. Evaluate on disjoint tasks, keep the reviewer off, and include shuffled-memory and raw-trajectory controls. Those choices separate genuine behavior transfer from answer leakage.</p>
+            </article>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span class="value">4</span><span class="label">Core experimental conditions, plus two high-value ablations</span></div>
+            <div class="metric"><span class="value">2</span><span class="label">Published multimodal benchmarks, not hand-authored tasks</span></div>
+            <div class="metric rust"><span class="value">0</span><span class="label">Reviewer calls allowed in the memory-only evaluation condition</span></div>
+            <div class="metric"><span class="value">1</span><span class="label">Closed loop from correction to reusable behavior and back to action</span></div>
+          </div>
+          <div class="callout risk">
+            <strong>What would make it look trivial</strong>
+            A demo where the student retrieves a solved example with the same answer pattern. Prevent this with task-ID guards, answer stripping, split isolation, and a behavior schema that only preserves trigger, procedure, verification step, and evidence count.
+          </div>
+        </section>
+
+        <section id="paper">
+          <div class="tag">01 · Paper findings</div>
+          <h2>Harness-Zero turns a strong harness into supervision.</h2>
+          <p class="section-lead">The September 2026 preprint studies how to preserve the benefits of specialized agent scaffolding after that scaffolding is removed.</p>
+
+          <div class="definition">
+            <div class="key">STUDENT</div>
+            <p>The task-solving language model operating under a fixed, minimal target harness. It does the work. It does not design the harness.</p>
+          </div>
+          <div class="definition">
+            <div class="key">h</div>
+            <p>The minimal target harness used for training trajectories and final deployment. In the paper, it is a fixed mini-SWE-agent configuration with one Bash execution tool.</p>
+          </div>
+          <div class="definition">
+            <div class="key">h*</div>
+            <p>The optimized, domain-specific harness whose induced behaviors should be transferred. It may expose different tools and information from the target harness.</p>
+          </div>
+          <div class="definition">
+            <div class="key">REVIEWER</div>
+            <p>The “agent-as-harness.” Guided by the optimized harness, it intercepts the student’s proposed response before execution, passes sound actions through, and otherwise supplies a minimal correction in the student’s action space.</p>
+          </div>
+          <div class="definition">
+            <div class="key">DISTILL</div>
+            <p>The accepted and corrected trajectories become supervised fine-tuning data. At deployment, the optimized harness, private guidance, and reviewer are removed.</p>
+          </div>
+
+          <div class="result-chart" aria-label="Reported Harness-Zero macro-average results">
+            <div class="bar-row"><span class="bar-label">Base model + minimal harness</span><div class="track"><div class="bar alt" style="width:23.3%"></div></div><span class="bar-value">23.3%</span></div>
+            <div class="bar-row"><span class="bar-label">Base model + optimized harness</span><div class="track"><div class="bar" style="width:41.7%"></div></div><span class="bar-value">41.7%</span></div>
+            <div class="bar-row"><span class="bar-label">Distilled model + minimal harness</span><div class="track"><div class="bar" style="width:44.3%"></div></div><span class="bar-value">44.3%</span></div>
+          </div>
+          <p class="fineprint">Macro-average reported across SpreadsheetBench Verified, AppWorld, and USPTO Retrosynthesis. The 44.3% result is for Qwen3.5-9B after fine-tuning on reviewed trajectories.</p>
+
+          <div class="three-col" style="margin-top:18px">
+            <article class="card tint"><div class="tag blue">Inference finding</div><h3>Agent beats code</h3><p>Without training, agent-as-harness averaged 81.1% across six benchmark-model settings, versus 78.1% for the optimized code harness.</p></article>
+            <article class="card tint"><div class="tag">Behavior finding</div><h3>82.3% recovered</h3><p>The distilled student recovered an average 82.3% of 28 behaviors induced by the optimized harness but absent from the base model.</p></article>
+            <article class="card tint"><div class="tag amber">Limitation</div><h3>Collection is slower</h3><p>The reviewer must be capable, and one reported collection setting incurred roughly 2.4× latency. Deep domain knowledge transferred less completely than procedural behavior.</p></article>
+          </div>
+          <p class="fineprint"><a class="source" href="https://arxiv.org/abs/2609.24974v1" target="_blank" rel="noopener">Harness-Zero on arXiv</a></p>
+        </section>
+
+        <section id="proposal">
+          <div class="tag">02 · Hackathon proposal</div>
+          <h2>Memory Distillation: a living harness without weight updates</h2>
+          <p class="section-lead">A small multimodal student learns reusable visual-reasoning procedures from a stronger reviewer. Instead of LoRA or SFT, reviewed experience becomes episodic memory and then compact behavior cards in MemMachine.</p>
+          <div class="two-col">
+            <article class="card">
+              <h3>Research hypothesis</h3>
+              <p>A student with the minimal harness plus retrieved behavior memory will outperform the same student without memory on held-out visual reasoning tasks, while using fewer model calls and less latency than online reviewer guidance.</p>
+            </article>
+            <article class="card">
+              <h3>Falsifiable outcome</h3>
+              <p>If memory-only accuracy does not exceed the minimal baseline, or if shuffled memories perform just as well, the hypothesis fails. The result is still informative about whether procedural harness behavior can live outside weights.</p>
+            </article>
+          </div>
+          <div class="callout green">
+            <strong>Core experiment</strong>
+            Collect reviewed trajectories on benchmark-provided development items. Consolidate only general procedures. Freeze the memory snapshot. On disjoint evaluation items, disable the reviewer and compare minimal harness, optimized harness, reviewer-guided, and memory-distilled conditions.
+          </div>
+        </section>
+
+        <section id="components">
+          <div class="tag">03 · Build decomposition</div>
+          <h2>Nine components, each with one defensible job</h2>
+          <p class="section-lead">The technology choices favor measurable behavior and a complete system over speculative training infrastructure. Exact Crusoe API identifiers should be confirmed against the hackathon account before implementation.</p>
+
+          <div class="component-list">
+            <article class="component"><div class="component-num">01</div><div class="component-body"><h3>Published task suite</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Supply visually rich tasks with known answers and official evaluation logic.</p></div><div class="spec"><b>Why</b><p>Avoid spending the event inventing an environment or defending hand-curated examples.</p></div><div class="spec"><b>Technology</b><p>ChartQA human-authored split and MathVista <span class="mono">testmini</span>, loaded with Hugging Face Datasets and fixed manifests.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">02</div><div class="component-body"><h3>Minimal harness <span class="mono">h</span></h3><div class="specs"><div class="spec"><b>Purpose</b><p>Define the student’s small, stable action space for every condition.</p></div><div class="spec"><b>Why</b><p>The reviewer must correct actions the student can actually produce; deployment must stay constant.</p></div><div class="spec"><b>Technology</b><p>Fixed system prompt plus four typed actions: <span class="mono">inspect_image</span>, <span class="mono">crop</span>, <span class="mono">run_python</span>, and <span class="mono">final_answer</span>.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">03</div><div class="component-body"><h3>Optimized reference harness <span class="mono">h*</span></h3><div class="specs"><div class="spec"><b>Purpose</b><p>Encode the stronger visual-reasoning procedure that guides review.</p></div><div class="spec"><b>Why</b><p>Creates a real behavior gap to transfer, rather than asking one model to self-critique vaguely.</p></div><div class="spec"><b>Technology</b><p>Planner, region inspection, legend/axis protocol, OCR fallback, Python arithmetic, answer normalization, and final verification rubric.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">04</div><div class="component-body"><h3>Student agent</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Solve benchmark items under the minimal harness and expose weaknesses the reviewer can repair.</p></div><div class="spec"><b>Why</b><p>A smaller model leaves headroom for observable transfer and keeps repeated evaluation affordable.</p></div><div class="spec"><b>Technology</b><p>Planned: Gemma 3 12B IT on Crusoe Managed Inference. Use low temperature and structured JSON actions; confirm the venue’s exact multimodal endpoint ID.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">05</div><div class="component-body"><h3>Reviewer agent at the response boundary</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Intercept each student action before execution and emit <span class="mono">PASS</span> or the smallest valid replacement.</p></div><div class="spec"><b>Why</b><p>This is the paper’s key translation step: privileged guidance becomes supervision in the student’s own action space.</p></div><div class="spec"><b>Technology</b><p>Planned: Nemotron 3.5 Super VL 120B on Crusoe serverless inference, with the reference-harness rubric and access to the image plus trace.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">06</div><div class="component-body"><h3>Consolidator agent</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Turn repeated corrections into short behavior cards and merge duplicates or contradictions.</p></div><div class="spec"><b>Why</b><p>Raw trajectories are long and instance-specific. The student needs compact, reusable procedures.</p></div><div class="spec"><b>Technology</b><p>Qwen3 235B A22B Instruct on Crusoe; JSON schema with trigger, procedure, verification, support count, failure modes, provenance IDs, and confidence.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">07</div><div class="component-body"><h3>MemMachine memory layer</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Persist reviewed episodes and serve distilled behaviors across runs and model sessions.</p></div><div class="spec"><b>Why</b><p>Memory is the proposed distillation target, not a log attached after the fact.</p></div><div class="spec"><b>Technology</b><p>MemMachine Python SDK or REST API. Episodic memory stores reviewed traces; semantic/profile memory stores behavior cards. Scope by benchmark, role, and run using <span class="mono">group_id</span>, <span class="mono">agent_id</span>, and metadata.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">08</div><div class="component-body"><h3>Evaluator and contamination guard</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Score answers, measure system cost, and prove evaluation items never enter memory.</p></div><div class="spec"><b>Why</b><p>Without split isolation, improvement could be memorization rather than behavioral transfer.</p></div><div class="spec"><b>Technology</b><p>Official benchmark answer normalization/evaluation code, immutable PID manifests, answer stripping before consolidation, SHA-256 task guards, and JSONL run telemetry.</p></div></div></div></article>
+
+            <article class="component"><div class="component-num">09</div><div class="component-body"><h3>Experiment dashboard</h3><div class="specs"><div class="spec"><b>Purpose</b><p>Make corrections, memories, retrievals, and metric deltas visible in one live story.</p></div><div class="spec"><b>Why</b><p>The visual proof must show the mechanism, not only a final bar chart.</p></div><div class="spec"><b>Technology</b><p>Streamlit + Plotly: image/question panel, student-versus-reviewer action diff, memory write/read feed, behavior graph, accuracy, latency, and token charts.</p></div></div></div></article>
+          </div>
+        </section>
+
+        <section id="tasks">
+          <div class="tag">04 · Task suite</div>
+          <h2>Use the benchmark as the environment.</h2>
+          <p class="section-lead">Every task comes from a published dataset. Selection is deterministic, split-aware, and reproducible. No puzzle or answer is authored during the hackathon.</p>
+          <div class="two-col">
+            <article class="card tint">
+              <div class="tag blue">ChartQA</div>
+              <h3>Read and reason over real charts</h3>
+              <p>Questions require locating values, resolving legends and axes, comparing series, and performing arithmetic. The dataset includes chart images, human-authored and machine-generated questions, annotations, and underlying tables.</p>
+              <h4>Planned slice</h4>
+              <p>Human-authored training items for collection; a disjoint human-authored validation/test manifest for evaluation. Start with 100 collection and 50 evaluation items.</p>
+              <h4>Scoring</h4>
+              <p>Use the repository’s official answer normalization and relaxed accuracy implementation.</p>
+              <a class="source" href="https://github.com/vis-nlp/ChartQA" target="_blank" rel="noopener">ChartQA repository</a>
+            </article>
+            <article class="card tint">
+              <div class="tag rust">MathVista testmini</div>
+              <h3>Mathematical reasoning in visual contexts</h3>
+              <p>The 1,000-item <span class="mono">testmini</span> split spans multiple-choice and free-form tasks involving diagrams, plots, geometry, tables, and everyday images. Public labels make local evaluation possible.</p>
+              <h4>Planned slice</h4>
+              <p>Create collection and held-out manifests by deterministic PID hash, stratified by task and answer type. Start with 100 collection and 50 evaluation items.</p>
+              <h4>Scoring</h4>
+              <p>Use MathVista’s official response extraction and answer-normalization logic.</p>
+              <a class="source" href="https://huggingface.co/datasets/AI4Math/MathVista" target="_blank" rel="noopener">MathVista dataset</a>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>Fairness rule</strong>
+            Retrieval queries may contain the new task’s modality, reasoning type, and requested operation, but never its ground-truth answer. Behavior cards may reference source trajectory IDs for provenance, but their text must not retain chart values, image IDs, options, or final answers.
+          </div>
+        </section>
+
+        <section id="loop">
+          <div class="tag">05 · System design</div>
+          <h2>The correction loop becomes the product.</h2>
+          <p class="section-lead">Collection and deployment share the same minimal student harness. Only collection includes the reviewer; only deployment consumes the frozen memory snapshot without reviewer help.</p>
+          <div class="diagram" role="img" aria-label="Closed loop from benchmark task through student, reviewer, tools, memory, consolidator, and back to retrieval">
+            <div class="flow">
+              <div class="node"><b>1 · Benchmark task</b><span>Image + question + hidden reference answer</span></div>
+              <div class="node"><b>2 · Retrieve behaviors</b><span>Top-k procedural cards selected by task type and query</span></div>
+              <div class="node"><b>3 · Student proposes</b><span>One typed action from the minimal harness</span></div>
+              <div class="node"><b>4 · Reviewer boundary</b><span>PASS or minimally corrected action before execution</span></div>
+            </div>
+            <div class="flow" style="margin-top:10px">
+              <div class="node"><b>5 · Tool executes</b><span>Inspect, crop, calculate, or answer</span></div>
+              <div class="node"><b>6 · State returns</b><span>Observation joins the trajectory; loop until final answer</span></div>
+              <div class="node"><b>7 · Evaluate</b><span>Score outcome, latency, tokens, corrections, and retrievals</span></div>
+              <div class="node"><b>8 · Write episode</b><span>Store trace, action diff, outcome, and provenance</span></div>
+            </div>
+            <div class="memory-band">
+              <div class="node"><b>MemMachine · episodic</b><span>Reviewed trajectories and failure episodes</span></div>
+              <div class="node"><b>Consolidator</b><span>Cluster, abstract, deduplicate, challenge</span></div>
+              <div class="node"><b>MemMachine · semantic/profile</b><span>Reusable behavior cards with confidence and support</span></div>
+            </div>
+            <div class="loopback">FROZEN BEHAVIOR SNAPSHOT → RETRIEVAL → FRESH STUDENT RUN · REVIEWER OFF</div>
+          </div>
+          <div class="two-col">
+            <article class="card"><h3>Collection mode</h3><p>Reviewer on. Every action is checked. The system logs accepted and replaced actions, execution observations, task result, and correction reason. Consolidation runs after a batch, not after every item, to expose recurring behavior.</p></article>
+            <article class="card"><h3>Evaluation mode</h3><p>Reviewer off. Memory writes off. The frozen memory snapshot is read-only. The student receives top-k behavior cards and may optionally request one episodic example if confidence is low.</p></article>
+          </div>
+        </section>
+
+        <section id="comparison">
+          <div class="tag">06 · Paper vs proposal</div>
+          <h2>Same transfer shape, different destination.</h2>
+          <p class="section-lead">The proposal preserves the response-boundary supervision idea while changing what is retained and how deployment pays for it.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Dimension</th><th>Harness-Zero</th><th>Memory Distillation</th></tr></thead>
+              <tbody>
+                <tr><td data-label="Dimension">Primary question</td><td data-label="Harness-Zero">Can optimized harness behavior be internalized into model parameters?</td><td data-label="Memory Distillation">Can optimized harness behavior remain external in a living memory layer and still transfer?</td></tr>
+                <tr><td data-label="Dimension">Task domains</td><td data-label="Harness-Zero">Spreadsheet work, application tool use, and retrosynthesis</td><td data-label="Memory Distillation">ChartQA and MathVista visual reasoning</td></tr>
+                <tr><td data-label="Dimension">Student</td><td data-label="Harness-Zero">Qwen3.5-9B under fixed mini-SWE-agent</td><td data-label="Memory Distillation">Gemma 3 12B IT under four typed multimodal actions</td></tr>
+                <tr><td data-label="Dimension">Supervisor</td><td data-label="Harness-Zero">Harnessing agent guided by optimized harness and private knowledge</td><td data-label="Memory Distillation">Nemotron 3.5 Super VL reviewer guided by visual reasoning protocol</td></tr>
+                <tr><td data-label="Dimension">Distillation target</td><td data-label="Harness-Zero">Student weights via supervised fine-tuning</td><td data-label="Memory Distillation">MemMachine episodes and compact behavior cards</td></tr>
+                <tr><td data-label="Dimension">Deployment</td><td data-label="Harness-Zero">Fine-tuned student + minimal harness</td><td data-label="Memory Distillation">Base student + minimal harness + frozen memory retrieval</td></tr>
+                <tr><td data-label="Dimension">Update cost</td><td data-label="Harness-Zero">New trajectories and another fine-tuning cycle</td><td data-label="Memory Distillation">Add, revise, or retire memory records without weight updates</td></tr>
+                <tr><td data-label="Dimension">Inspectability</td><td data-label="Harness-Zero">Behavior lives implicitly in parameters</td><td data-label="Memory Distillation">Behavior cards are readable, attributed, scored, and deletable</td></tr>
+                <tr><td data-label="Dimension">Tradeoff</td><td data-label="Harness-Zero">No retrieval dependency at inference</td><td data-label="Memory Distillation">Pays retrieval/context cost and may suffer irrelevant-memory interference</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="theme">
+          <div class="tag">07 · Theme alignment</div>
+          <h2>A recursive team that improves its own operating procedure</h2>
+          <p class="section-lead">The proposal should be pitched as a team whose work product is a better future harness, not as several LLM calls placed in sequence.</p>
+          <div class="three-col">
+            <article class="card tint"><h3>Recursive agency</h3><p>A reviewer agent supervises a student agent; a consolidator studies that supervision and rewrites it into policy-like memory for the next student.</p></article>
+            <article class="card tint"><h3>Self-check and recovery</h3><p>Every proposed action crosses a response boundary before execution. Failures become structured evidence rather than discarded logs.</p></article>
+            <article class="card tint"><h3>Long-running autonomy</h3><p>Collection, consolidation, and evaluation can proceed by manifest while the team accumulates and refines its shared memory.</p></article>
+            <article class="card tint"><h3>Delegation</h3><p>The student solves, tools inspect and calculate, the reviewer enforces quality, the consolidator abstracts, and the evaluator remains independent.</p></article>
+            <article class="card tint"><h3>Shared memory</h3><p>MemMachine is the coordination substrate across roles and sessions, not a secondary analytics store.</p></article>
+            <article class="card tint"><h3>Measured improvement</h3><p>The team earns its complexity only if held-out accuracy rises and reviewer-free deployment reduces latency or token cost.</p></article>
+          </div>
+        </section>
+
+        <section id="sponsors">
+          <div class="tag">08 · Sponsor integration</div>
+          <h2>Both required sponsors are on the critical path.</h2>
+          <p class="section-lead">If either product is removed, the central experiment changes rather than merely losing a logo.</p>
+          <div class="two-col">
+            <article class="card">
+              <div class="tag">Crusoe · brains</div>
+              <h3>All production inference</h3>
+              <ul>
+                <li>Gemma 3 12B IT for the student baseline and memory-only condition</li>
+                <li>Nemotron 3.5 Super VL 120B for multimodal response-boundary review</li>
+                <li>Qwen3 235B A22B Instruct for batch consolidation of reviewed traces</li>
+                <li>OpenAI-compatible API wrapper records model, token, latency, retry, and cost metadata</li>
+              </ul>
+              <p class="fineprint">Model availability shown on Crusoe’s public managed inference pages as of this brief; confirm exact endpoint names and image-input support in the venue account.</p>
+              <a class="source" href="https://www.crusoe.ai/cloud/managed-inference" target="_blank" rel="noopener">Crusoe Managed Inference</a>
+            </article>
+            <article class="card">
+              <div class="tag rust">MemMachine · mind</div>
+              <h3>The distillation target</h3>
+              <ul>
+                <li>Reviewed traces stored as long-term episodic memory with outcome and provenance</li>
+                <li>Consolidated procedures stored as semantic/profile records</li>
+                <li>Role and benchmark scoping through agent and group identifiers</li>
+                <li>Search path supplies top-k behaviors to a fresh student after the reviewer is removed</li>
+              </ul>
+              <p class="fineprint">Use the Python SDK for the fastest path. Keep REST calls behind an adapter so self-hosted and managed deployment can be swapped without touching orchestration.</p>
+              <a class="source" href="https://github.com/MemMachine/MemMachine" target="_blank" rel="noopener">MemMachine repository</a>
+            </article>
+          </div>
+          <div class="callout green">
+            <strong>Interview value</strong>
+            The build produces concrete product observations: multi-agent scoping, structured-vs-free-text writes, retrieval latency, duplicate consolidation, contradiction handling, and whether semantic memory can reliably carry procedural behavior across sessions.
+          </div>
+        </section>
+
+        <section id="evaluation">
+          <div class="tag">09 · Evaluation plan</div>
+          <h2>Four bars tell the story. Two ablations make it credible.</h2>
+          <div class="condition-grid">
+            <article class="condition"><h3>Minimal baseline</h3><p>Student + minimal harness. No reviewer, no memory. Establishes the floor.</p></article>
+            <article class="condition"><h3>Optimized harness attached</h3><p>Student uses the stronger fixed procedure and tools directly. Establishes what is available to transfer.</p></article>
+            <article class="condition"><h3>Reviewer-guided</h3><p>Student stays in the minimal action space while the reviewer intercepts every action. Establishes the online ceiling and collection cost.</p></article>
+            <article class="condition"><h3>Memory-distilled</h3><p>Fresh student, minimal harness, frozen MemMachine snapshot, reviewer off. This is the primary result.</p></article>
+            <article class="condition"><h3>Raw-trajectory retrieval</h3><p>Retrieve full episodes instead of behavior cards. Tests whether consolidation adds value beyond ordinary example retrieval.</p></article>
+            <article class="condition"><h3>Shuffled-memory control</h3><p>Inject equally sized but irrelevant behavior cards. Tests whether gains come from relevant procedure rather than extra context.</p></article>
+          </div>
+
+          <div class="formula" style="margin-top:18px">gap recovery = (accuracy<sub>memory</sub> − accuracy<sub>minimal</sub>) ÷ (accuracy<sub>reviewer</sub> − accuracy<sub>minimal</sub>)</div>
+
+          <div class="three-col" style="margin-top:15px">
+            <article class="card"><h3>Capability</h3><ul><li>Task accuracy overall and by benchmark</li><li>Gap recovery</li><li>Accuracy after helpful, neutral, and harmful retrieval</li><li>Behavior coverage by error category</li></ul></article>
+            <article class="card"><h3>Efficiency</h3><ul><li>End-to-end p50 and p95 latency</li><li>Input/output tokens per solved item</li><li>Model calls and tool calls</li><li>Reviewer collection overhead</li></ul></article>
+            <article class="card"><h3>Memory quality</h3><ul><li>Retrieval hit rate at k</li><li>Correction-to-behavior compression ratio</li><li>Duplicate and contradiction rate</li><li>Held-out answer leakage: target 0</li></ul></article>
+          </div>
+          <div class="callout">
+            <strong>Decision threshold</strong>
+            A compelling result is not necessarily parity with online review. The practical win is statistically visible accuracy gain over the minimal baseline, clearly relevant retrievals, and lower latency or token use than calling the reviewer on every action.
+          </div>
+        </section>
+
+        <section id="demo">
+          <div class="tag">10 · Demo arc</div>
+          <h2>Show the mechanism before the chart.</h2>
+          <p class="section-lead">The live portion should take three to four minutes. Precompute the full benchmark runs and reserve the live calls for one representative task.</p>
+          <div class="demo-steps">
+            <article class="demo-step"><h3>Expose the failure</h3><p>Run one chart or diagram through the minimal student. Show the incorrect crop, arithmetic, or answer decision.</p></article>
+            <article class="demo-step"><h3>Reveal the boundary</h3><p>Replay with the reviewer. Highlight the smallest changed action and the successful recovery.</p></article>
+            <article class="demo-step"><h3>Watch memory form</h3><p>Open the reviewed episode, then show the consolidator producing a short reusable behavior card with provenance.</p></article>
+            <article class="demo-step"><h3>Remove the teacher</h3><p>Disable the reviewer. Solve a new held-out item using retrieved behavior, then land on the six-condition results.</p></article>
+          </div>
+          <div class="two-col" style="margin-top:15px">
+            <article class="card tint"><h3>Hero visual</h3><p>Image on the left; student action, reviewer diff, and tool observation in the center; memory writes and reads on the right. A top strip tracks accuracy, latency, tokens, and memory count.</p></article>
+            <article class="card tint"><h3>Final line</h3><p>“Harness-Zero moved the harness into weights. We moved it into a memory layer that can be inspected, shared, corrected, and reused by the next agent.”</p></article>
+          </div>
+        </section>
+
+        <section id="risks">
+          <div class="tag rust">11 · Risks</div>
+          <h2>Make every failure diagnosable by noon Saturday.</h2>
+          <div class="risk-list">
+            <div class="risk-row"><b>No capability gap</b><p><strong>Symptom:</strong> student already solves nearly everything.</p><p><strong>Mitigation:</strong> use harder benchmark strata, smaller student, stricter minimal tools, and preserve the same evaluation manifest.</p></div>
+            <div class="risk-row"><b>Answer leakage</b><p><strong>Symptom:</strong> memory wins suspiciously on near-duplicates.</p><p><strong>Mitigation:</strong> answer stripping, PID/hash guard, disjoint splits, lexical overlap audit, and shuffled-memory control.</p></div>
+            <div class="risk-row"><b>Bad retrieval</b><p><strong>Symptom:</strong> irrelevant cards increase context and lower accuracy.</p><p><strong>Mitigation:</strong> metadata filter by benchmark/task type, hybrid search, small top-k, score threshold, and no-memory fallback.</p></div>
+            <div class="risk-row"><b>Weak reviewer</b><p><strong>Symptom:</strong> corrections do not improve execution.</p><p><strong>Mitigation:</strong> test on 20 labeled items first, expose image and full state, require tool-valid JSON, and compare reviewer-corrected action outcomes.</p></div>
+            <div class="risk-row"><b>Over-consolidation</b><p><strong>Symptom:</strong> generic advice replaces precise procedures.</p><p><strong>Mitigation:</strong> require repeated support, preserve trigger and verification fields, and keep provenance links to episodes.</p></div>
+            <div class="risk-row"><b>Integration drag</b><p><strong>Symptom:</strong> MemMachine or Crusoe setup consumes Friday.</p><p><strong>Mitigation:</strong> prove one write/search and one multimodal call before orchestration; keep thin adapters and a JSONL mirror for debugging only.</p></div>
+            <div class="risk-row"><b>Demo network risk</b><p><strong>Symptom:</strong> live calls stall on stage.</p><p><strong>Mitigation:</strong> cache one verified replay, precompute all aggregate results, and mark replay mode visibly rather than pretending it is live.</p></div>
+          </div>
+        </section>
+
+        <section id="schedule">
+          <div class="tag">12 · Build schedule</div>
+          <h2>Friday builds the spine. Saturday earns the claim.</h2>
+          <p class="section-lead">This schedule assumes a Friday morning start and a hard Saturday 10 PM submission. The cut line protects the experiment and demo before optional fine-tuning.</p>
+          <div class="timeline">
+            <div class="event"><time>Friday · 8:00–10:00 AM</time><h3>Prove sponsor access</h3><p>One Crusoe multimodal request for each planned model; one MemMachine write and search; record exact model IDs, latency, limits, and payload shapes.</p></div>
+            <div class="event"><time>Friday · 10:00 AM–1:00 PM</time><h3>Lock tasks and evaluator</h3><p>Download ChartQA and MathVista, generate deterministic manifests, validate images, run official scoring on known answers, and freeze collection/evaluation IDs.</p></div>
+            <div class="event"><time>Friday · 1:00–4:00 PM</time><h3>Build minimal harness and baseline</h3><p>Typed action schema, image crop tool, Python sandbox, answer adapter, telemetry, and a 20-item baseline. Confirm there is enough headroom.</p></div>
+            <div class="event"><time>Friday · 4:00–8:00 PM</time><h3>Add reviewer boundary</h3><p>Implement PASS/REPLACE protocol, validate tool actions, compare 20 corrected runs, and inspect whether interventions improve outcomes.</p></div>
+            <div class="event"><time>Friday · 8:00–11:00 PM</time><h3>Write reviewed episodes</h3><p>Map traces into MemMachine, preserve provenance and outcome, verify multi-agent scoping, and build the correction feed.</p></div>
+            <div class="event"><time>Friday · 11:00 PM–Saturday 1:00 AM</time><h3>First consolidation batch</h3><p>Generate behavior cards, deduplicate, strip answers, test retrieval on five unseen items, then stop with an end-to-end vertical slice.</p></div>
+            <div class="event"><time>Saturday · 8:00–11:00 AM</time><h3>Scale collection and freeze memory</h3><p>Run planned collection manifests, consolidate in batches, review failure clusters, lock the memory snapshot and code commit.</p></div>
+            <div class="event"><time>Saturday · 11:00 AM–2:00 PM</time><h3>Run the four core conditions</h3><p>Evaluate on held-out manifests with fixed seeds. Reviewer and writes are disabled for memory-only runs. Export results and traces.</p></div>
+            <div class="event"><time>Saturday · 2:00–4:00 PM</time><h3>Run credibility ablations</h3><p>Raw-trajectory retrieval, shuffled-memory control, retrieval top-k sensitivity, and per-error-category breakdown.</p></div>
+            <div class="event"><time>Saturday · 4:00–6:30 PM</time><h3>Finish dashboard and visuals</h3><p>Wire the representative trace, correction diff, memory provenance, aggregate metrics, and replay-safe demo path.</p></div>
+            <div class="event"><time>Saturday · 6:30–8:00 PM</time><h3>Rehearse and cut scope</h3><p>Three complete demo runs. Remove fragile extras. Freeze charts, README, architecture slide, and result claims.</p></div>
+            <div class="event"><time>Saturday · 8:00–10:00 PM</time><h3>Buffer, package, submit</h3><p>Fresh-environment smoke test, final video capture, submission copy, sponsor attribution, and upload.</p></div>
+          </div>
+          <div class="callout risk">
+            <strong>Stretch goal only after 2 PM Saturday</strong>
+            A small LoRA/SFT run on the reviewed trajectories can create a three-way comparison between weights, memory, and online review. Do not let it displace held-out evaluation, ablations, or the demo.
+          </div>
+        </section>
+
+        <section id="sources">
+          <div class="tag">Sources</div>
+          <h2>Primary references</h2>
+          <ul class="source-list">
+            <li><a href="https://arxiv.org/abs/2609.24974v1" target="_blank" rel="noopener">Harness-Zero: Harness Distillation via Agent-as-Harness</a> · paper abstract, roles, domains, and reported results</li>
+            <li><a href="https://github.com/vis-nlp/ChartQA" target="_blank" rel="noopener">ChartQA repository</a> · dataset structure and benchmark assets</li>
+            <li><a href="https://huggingface.co/datasets/AI4Math/MathVista" target="_blank" rel="noopener">MathVista on Hugging Face</a> · public dataset and testmini split</li>
+            <li><a href="https://github.com/MemMachine/MemMachine" target="_blank" rel="noopener">MemMachine repository</a> · SDK, MCP, memory types, scoping, and deployment options</li>
+            <li><a href="https://www.crusoe.ai/cloud/managed-inference" target="_blank" rel="noopener">Crusoe Managed Inference</a> · current public model and platform information</li>
+          </ul>
+          <p class="fineprint">Research snapshot: 16 October 2026. Model availability can differ by account and event allocation; confirm the exact endpoint identifiers before coding against them.</p>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var links = Array.prototype.slice.call(document.querySelectorAll('nav a'));
+      var sections = links.map(function (link) { return document.querySelector(link.getAttribute('href')); }).filter(Boolean);
+      if (!('IntersectionObserver' in window)) return;
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          links.forEach(function (link) {
+            link.classList.toggle('active', link.getAttribute('href') === '#' + entry.target.id);
+          });
+        });
+      }, { rootMargin: '-18% 0px -68% 0px', threshold: 0 });
+      sections.forEach(function (section) { observer.observe(section); });
+    }());
+  </script>
+</body>
+</html>
