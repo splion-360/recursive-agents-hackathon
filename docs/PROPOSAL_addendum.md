@@ -104,6 +104,8 @@ Run the Accepted Version and Candidate Version on the same 30 Promotion tasks wi
 
 The deterministic Promotion Gate applies the predeclared capability, Negative Transfer, latency, token, validity, and contamination thresholds. A passing candidate advances the Accepted Version pointer atomically. A rejected candidate remains immutable for audit and the pointer stays unchanged. Humans may repair infrastructure and rerun only under a predeclared retry policy; they may not edit cards, thresholds, or results.
 
+**Current live gate:** the managed MemMachine public API verified on October 17, 2026 does not expose a conditional update primitive. The adapter stores and retrieves the immutable bootstrap pointer but refuses promotion updates rather than approximating compare-and-set with a non-atomic append. Measured promotion remains blocked until an approved atomic MemMachine mechanism is available.
+
 Accepted v000 is the immutable empty initial version, so a rejected first candidate is representable without fabricating progress.
 
 ## Phase E: one Final Held-Out C0-C3 run
