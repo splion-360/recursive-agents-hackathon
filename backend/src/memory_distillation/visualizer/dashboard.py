@@ -2,11 +2,13 @@
 
 import json
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from memory_distillation.benchmark import DevelopmentBenchmark, TaskAsset, TaskInput
 from memory_distillation.settings import Settings
 from memory_distillation.task_execution.models import RunEvent
 
@@ -15,6 +17,7 @@ CALIBRATION_ARTIFACT_DIR = _REPOSITORY_ROOT / ".artifacts" / "calibration" / "cu
 CALIBRATION_STATUS_PATH = CALIBRATION_ARTIFACT_DIR / "status.json"
 CALIBRATION_EVENTS_PATH = CALIBRATION_ARTIFACT_DIR / "events.jsonl"
 _MANIFEST_DIR = _REPOSITORY_ROOT / "backend" / "experiment_manifests"
+_DATASET_ROOT = _REPOSITORY_ROOT / ".local" / "chartqa-source" / "ChartQA Dataset"
 _RUN_EVENT_ADAPTER = TypeAdapter(RunEvent)
 
 
@@ -99,6 +102,15 @@ class DashboardSnapshot(BaseModel):
     recent_events: tuple[RunEvent, ...]
 
 
+class CalibrationTaskDetail(BaseModel):
+    """Answer-free task context displayed beside a calibration chart."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    question: str
+
+
 def load_dashboard_snapshot(settings: Settings) -> DashboardSnapshot:
     """Load only public local artifacts; malformed artifacts fail closed."""
 
@@ -156,6 +168,32 @@ def write_calibration_status(status: CalibrationStatus) -> None:
     temporary = CALIBRATION_STATUS_PATH.with_suffix(".json.tmp")
     temporary.write_text(status.model_dump_json(indent=2), encoding="utf-8")
     temporary.replace(CALIBRATION_STATUS_PATH)
+
+
+def load_calibration_task_asset(task_id: str) -> TaskAsset:
+    """Load an answer-free image only when it belongs to a calibration manifest."""
+
+    benchmark, _ = _calibration_source()
+    task = load_calibration_task(task_id)
+    return benchmark.load_asset(task)
+
+
+def load_calibration_task(task_id: str) -> TaskInput:
+    """Load answer-free context only for a task in the calibration manifests."""
+
+    _, tasks = _calibration_source()
+    try:
+        return tasks[task_id]
+    except KeyError as error:
+        raise KeyError(f"unknown calibration task: {task_id}") from error
+
+
+@lru_cache(maxsize=1)
+def _calibration_source() -> tuple[DevelopmentBenchmark, dict[str, TaskInput]]:
+    benchmark = DevelopmentBenchmark(dataset_root=_DATASET_ROOT, manifest_dir=_MANIFEST_DIR)
+    calibration = benchmark.load_calibration()
+    tasks = {task.task_id: task for task in (*calibration.discovery, *calibration.regression)}
+    return benchmark, tasks
 
 
 def _load_calibration_status() -> CalibrationStatus:

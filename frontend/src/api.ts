@@ -73,10 +73,21 @@ export type DashboardSnapshot = {
   recent_events: RunEvent[];
 };
 
+export type CalibrationTaskDetail = {
+  task_id: string;
+  question: string;
+};
+
 export async function fetchDashboard(): Promise<DashboardSnapshot> {
   const response = await fetch("/api/dashboard");
   if (!response.ok) throw new Error(`Dashboard API returned ${response.status}`);
   return response.json() as Promise<DashboardSnapshot>;
+}
+
+export async function fetchCalibrationTask(taskId: string): Promise<CalibrationTaskDetail> {
+  const response = await fetch(`/api/dashboard/tasks/${encodeURIComponent(taskId)}`);
+  if (!response.ok) throw new Error(`Task API returned ${response.status}`);
+  return response.json() as Promise<CalibrationTaskDetail>;
 }
 
 export function subscribeToRunEvents(

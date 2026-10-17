@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   type DashboardSnapshot,
   type RunEvent,
+  fetchCalibrationTask,
   fetchDashboard,
   subscribeToRunEvents,
 } from "./api";
@@ -171,7 +172,17 @@ function SystemHealth({ snapshot }: { snapshot: DashboardSnapshot }) {
 
 function ProgressCard({ snapshot }: { snapshot: DashboardSnapshot }) { const c = snapshot.calibration; return <div className="panel progress-card"><PanelTitle eyebrow="TICKET 14" title="Calibration progress" detail={c.message} /><Progress label="Discovery trajectories" value={c.discovery_completed} total={8} /><Progress label="Regression trajectories" value={c.regression_completed} total={8} /><Progress label="PASS / REPLACE smoke" value={c.smoke_completed} total={c.smoke_total || 5} /><div className="current-step"><span>NOW</span><b>{pretty(c.stage)}</b><small>{c.current_task_id ?? "Waiting for shell command"}</small></div></div>; }
 function RecentEvents({ events, onNavigate }: { events: RunEvent[]; onNavigate: () => void }) { return <div className="panel recent-card"><PanelTitle eyebrow="TRACE TAIL" title="Recent events" detail="Sanitized RunEvent projection" />{events.length ? events.map((event, index) => <MiniEvent event={event} key={`${event.task_id}-${event.sequence}-${index}`} />) : <EmptyState title="Stream is quiet" body="No calibration events have been written." />}<button className="text-button" onClick={onNavigate}>Open full trajectory →</button></div>; }
-function TaskTraceTable({ traces }: { traces: RunEvent[][] }) { return <div className="task-trace"><div className="task-trace-head"><span>Task / policy</span><span>Student proposal</span><span>Reviewer</span><span>Official result</span></div>{traces.map((trace, index) => <TaskTraceRow events={trace} index={index + 1} key={`${trace[0]?.task_id ?? "partial"}-${index}`} />)}</div>; }
+function TaskTraceTable({ traces }: { traces: RunEvent[][] }) {
+  const occurrenceByTask = new Map<string, number>();
+  const keyed = [...traces].reverse().map((trace) => {
+    const start = trace.find((event) => event.type === "run_started");
+    const base = `${start?.task_id ?? trace[0]?.task_id ?? "partial"}-${start?.seed ?? "unknown"}`;
+    const occurrence = occurrenceByTask.get(base) ?? 0;
+    occurrenceByTask.set(base, occurrence + 1);
+    return { trace, key: `${base}-${occurrence}` };
+  }).reverse();
+  return <div className="task-trace"><div className="task-trace-head"><span>Task / policy</span><span>Student proposal</span><span>Reviewer</span><span>Official result</span></div>{keyed.map(({ trace, key }, index) => <TaskTraceRow events={trace} index={index + 1} key={key} />)}</div>;
+}
 function TaskTraceRow({ events, index }: { events: RunEvent[]; index: number }) {
   const start = events.find((event) => event.type === "run_started");
   const proposal = events.filter((event) => event.type === "action_proposed").at(-1);
@@ -179,11 +190,23 @@ function TaskTraceRow({ events, index }: { events: RunEvent[]; index: number }) 
   const completion = events.filter((event) => event.type === "run_completed").at(-1);
   const policy = start?.kappa_hash ? `κ ${start.kappa_hash.slice(0, 8)}` : review ? "H* candidate" : "Baseline";
   const result = resultLabel(completion);
+  const taskId = start?.task_id ?? events[0]?.task_id ?? "Unknown task";
+  const [expanded, setExpanded] = useState(false);
+  const [question, setQuestion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!expanded || question !== null || taskId === "Unknown task") return;
+    let active = true;
+    fetchCalibrationTask(taskId)
+      .then((task) => { if (active) setQuestion(task.question); })
+      .catch(() => { if (active) setQuestion("Question unavailable for this task."); });
+    return () => { active = false; };
+  }, [expanded, question, taskId]);
   return <article className={`task-trace-row ${result.tone}`}>
-    <div className="task-cell identity"><span className="task-number">{String(index).padStart(2, "0")}</span><div><b title={start?.task_id ?? events[0]?.task_id}>{shortTask(start?.task_id ?? events[0]?.task_id ?? "Unknown task")}</b><small>{policy}{start?.seed !== undefined ? ` · seed ${start.seed}` : ""}</small></div></div>
+    <div className="task-cell identity"><span className="task-number">{String(index).padStart(2, "0")}</span><div><b title={taskId}>{shortTask(taskId)}</b><small>{policy}{start?.seed !== undefined ? ` · seed ${start.seed}` : ""}</small></div></div>
     <div className="task-cell"><small>{proposal ? pretty(proposal.action?.type ?? "action") : "Waiting"}</small><strong title={actionSummary(proposal?.action)}>{actionSummary(proposal?.action)}</strong></div>
     <div className="task-cell"><small>{review ? review.decision.toUpperCase() : "BASELINE"}</small><strong title={reviewSummary(review)}>{reviewSummary(review)}</strong></div>
     <div className="task-cell result"><span className={`result-dot ${result.tone}`} /> <div><strong>{result.label}</strong><small>{completion ? pretty(completion.failure_kind ?? completion.termination_reason ?? "completed") : `${events.length} events received`}</small></div></div>
+    <details className="task-chart" onToggle={(event) => setExpanded(event.currentTarget.open)}><summary><span>View task</span><code>{taskId}</code></summary><div><div className="task-question"><small>QUESTION</small><p>{question ?? "Loading question…"}</p></div><img src={`/api/dashboard/tasks/${encodeURIComponent(taskId)}/image`} alt={`Chart for ${taskId}`} loading="lazy" /></div></details>
   </article>;
 }
 function MiniEvent({ event }: { event: RunEvent }) { return <div className="mini-event"><span>{eventIcon(event.type)}</span><div><b>{pretty(event.type)}</b><small>{eventDescription(event)}</small></div><code>{event.sequence}</code></div>; }

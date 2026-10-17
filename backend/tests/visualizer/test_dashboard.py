@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from memory_distillation import main as main_module
+from memory_distillation.benchmark import TaskAsset, TaskInput
 from memory_distillation.main import app
 from memory_distillation.task_execution.models import RunStartedEvent
 from memory_distillation.visualizer import dashboard as dashboard_module
@@ -65,3 +67,50 @@ def test_live_trace_accepts_only_complete_typed_run_events(tmp_path: Path) -> No
     path.write_text(event.model_dump_json(), encoding="utf-8")
     with pytest.raises(ValueError, match="truncated"):
         read_run_events(path)
+
+
+def test_dashboard_serves_only_sanitized_calibration_chart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_id = "chartqa:train:human:fixture"
+    monkeypatch.setattr(
+        main_module,
+        "load_calibration_task_asset",
+        lambda requested: TaskAsset(
+            task_id=requested,
+            media_type="image/png",
+            image_sha256="a" * 64,
+            content=b"fixture-png",
+        ),
+    )
+
+    response = TestClient(app).get(f"/api/dashboard/tasks/{task_id}/image")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content == b"fixture-png"
+
+
+def test_dashboard_serves_answer_free_calibration_task_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_id = "chartqa:train:human:fixture"
+    monkeypatch.setattr(
+        main_module,
+        "load_calibration_task",
+        lambda requested: TaskInput(
+            task_id=requested,
+            question="Which category has the highest value?",
+            image_asset_id="fixture.png",
+            image_sha256="a" * 64,
+            source_split="train",
+        ),
+    )
+
+    response = TestClient(app).get(f"/api/dashboard/tasks/{task_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "task_id": task_id,
+        "question": "Which category has the highest value?",
+    }

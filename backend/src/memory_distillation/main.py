@@ -5,7 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -23,6 +23,11 @@ from memory_distillation.visualizer import (
     load_dashboard_snapshot,
     parse_run_event,
     synthetic_evidence,
+)
+from memory_distillation.visualizer.dashboard import (
+    CalibrationTaskDetail,
+    load_calibration_task,
+    load_calibration_task_asset,
 )
 
 
@@ -76,6 +81,32 @@ def dashboard() -> DashboardSnapshot:
     return load_dashboard_snapshot(app.state.settings)
 
 
+@app.get("/api/dashboard/tasks/{task_id}/image", response_class=Response)
+def dashboard_task_image(task_id: str) -> Response:
+    """Serve a calibration chart without exposing dataset paths or answer labels."""
+
+    try:
+        asset = load_calibration_task_asset(task_id)
+    except (KeyError, FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail="Calibration chart not found") from error
+    return Response(
+        content=asset.content,
+        media_type=asset.media_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@app.get("/api/dashboard/tasks/{task_id}", response_model=CalibrationTaskDetail)
+def dashboard_task(task_id: str) -> CalibrationTaskDetail:
+    """Return answer-free task context for a calibration-table row."""
+
+    try:
+        task = load_calibration_task(task_id)
+    except (KeyError, FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail="Calibration task not found") from error
+    return CalibrationTaskDetail(task_id=task.task_id, question=task.question)
+
+
 @app.get("/api/dashboard/events")
 async def dashboard_events() -> StreamingResponse:
     """Stream validated public RunEvents appended by the shell-driven runner."""
@@ -90,6 +121,8 @@ async def dashboard_events() -> StreamingResponse:
                         if not line.endswith("\n"):
                             break
                         offset = source.tell()
+                        if not line.strip():
+                            continue
                         event = parse_run_event(json.loads(line))
                         payload = event.model_dump(mode="json")
                         encoded = json.dumps(payload, separators=(",", ":"))
