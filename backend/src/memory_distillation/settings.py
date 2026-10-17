@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     crusoe_timeout_seconds: float = Field(default=60, gt=0)
     crusoe_max_retries: int = Field(default=1, ge=0, le=3)
 
-    openshell_base_url: AnyHttpUrl | None = None
-    openshell_api_key: SecretStr | None = None
+    openshell_sandbox_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,18}$")
+    openshell_gateway: str = Field(default="nemoclaw", min_length=1)
 
 
 @lru_cache(maxsize=1)

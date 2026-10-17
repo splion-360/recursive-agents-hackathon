@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memory_distillation.benchmark import Score
 from memory_distillation.review_policy import KappaArtifact
+from memory_distillation.sandbox.protocol import SandboxFailureKind, SandboxStatus
 
 
 class InspectImageAction(BaseModel):
@@ -159,6 +160,20 @@ class ActionReviewedEvent(BaseModel):
     review: ActionReview
 
 
+class SandboxFailureEvent(BaseModel):
+    """Typed public evidence for a failed generated-code execution."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["sandbox_failure"] = "sandbox_failure"
+    sequence: int
+    task_id: str
+    status: SandboxStatus
+    failure_kind: SandboxFailureKind
+    exit_code: int | None
+    latency_ms: int = Field(ge=0)
+
+
 TerminationReason = Literal[
     "completed",
     "action_budget_exhausted",
@@ -189,6 +204,7 @@ RunEvent = Annotated[
     | InferenceRequestedEvent
     | ActionProposedEvent
     | ActionReviewedEvent
+    | SandboxFailureEvent
     | ObservationEvent
     | RunCompletedEvent,
     Field(discriminator="type"),

@@ -5,7 +5,8 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from memory_distillation.settings import get_settings
+from memory_distillation.sandbox import OpenShellSandbox
+from memory_distillation.settings import Settings, get_settings
 from memory_distillation.visualizer import (
     MetricEvidence,
     PromotionEvidence,
@@ -23,8 +24,20 @@ class HealthResponse(BaseModel):
     application: str
 
 
+def create_production_sandbox(settings: Settings) -> OpenShellSandbox | None:
+    """Compose the live sandbox adapter only when a sandbox is configured."""
+
+    if settings.openshell_sandbox_name is None:
+        return None
+    return OpenShellSandbox(
+        sandbox_name=settings.openshell_sandbox_name,
+        gateway=settings.openshell_gateway,
+    )
+
+
 app = FastAPI(title="Memory-Distilled Agent Team")
 app.state.settings = get_settings()
+app.state.sandbox = create_production_sandbox(app.state.settings)
 
 
 @app.get("/health", response_model=HealthResponse)

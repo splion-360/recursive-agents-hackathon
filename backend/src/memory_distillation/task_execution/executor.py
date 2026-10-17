@@ -19,6 +19,7 @@ from memory_distillation.task_execution.models import (
     RunCompletedEvent,
     RunEvent,
     RunStartedEvent,
+    SandboxFailureEvent,
     StudentAction,
     TaskRun,
     TerminationReason,
@@ -393,6 +394,16 @@ class TaskExecutor:
                         )
                     )
                 except Exception:
+                    emit(
+                        SandboxFailureEvent(
+                            sequence=len(events),
+                            task_id=task.task_id,
+                            status="failed",
+                            failure_kind="transport_failed",
+                            exit_code=None,
+                            latency_ms=0,
+                        )
+                    )
                     return self._finish(
                         "sandbox_failed",
                         task,
@@ -424,6 +435,23 @@ class TaskExecutor:
                         None,
                     )
                 if sandbox_result.status != "completed" or sandbox_result.exit_code != 0:
+                    failure_kind = sandbox_result.failure_kind
+                    if failure_kind is None:
+                        failure_kind = (
+                            "timed_out"
+                            if sandbox_result.status == "timed_out"
+                            else "command_failed"
+                        )
+                    emit(
+                        SandboxFailureEvent(
+                            sequence=len(events),
+                            task_id=task.task_id,
+                            status=sandbox_result.status,
+                            failure_kind=failure_kind,
+                            exit_code=sandbox_result.exit_code,
+                            latency_ms=sandbox_result.latency_ms,
+                        )
+                    )
                     return self._finish(
                         "sandbox_failed",
                         task,
