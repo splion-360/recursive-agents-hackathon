@@ -1,0 +1,552 @@
+{
+  "content_sha256": "0fb52f2c37278cff9e9b8da5d7a126ec600e1cc9492670bb4041f1c23fa446a3",
+  "dataset_name": "ChartQA",
+  "dataset_repository": "https://github.com/vis-nlp/ChartQA",
+  "dataset_revision": "044eabfc306abfe9340c5741f0093aefc5973d06",
+  "entries": [
+    {
+      "image_asset_id": "test/png/10222.png",
+      "image_sha256": "2e543ccd13ddc5761af5eab17eb754d83049ede98ed4c82b3304d03179626877",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "d2741d333765c4cf7acd10e96e5e04863839e55c535f3785f7d6b3db7d3e0326",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:0c083ba5245e85cf4d371990"
+    },
+    {
+      "image_asset_id": "test/png/6310.png",
+      "image_sha256": "9f24979f11d8dfd48bf07939dd4ee0be6a1c6ff2782ef50671288f8662b47c7f",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "ca6d7a9e5023b302392ac48d33fd84a430c92f41249137cd5af43bf147146b67",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1cd9ac857f316d1d15f08134"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_40258.png",
+      "image_sha256": "b70e2364c528dba75908cedd5245235ae1f8fb07c24468802a51f0952089f993",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "3be2327c5e52ee799670c4e81218d61b52095ed5f718ffa77bd6b3ae39392a26",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:165804fb1563ccab358ac25f"
+    },
+    {
+      "image_asset_id": "test/png/10688218006639.png",
+      "image_sha256": "9ba6888027c2ac3bb171b9a6be9f396332d3f6c9b479dfd818da99ec3f97eaf6",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "e8b47bc5db42cabd5975bdbbfb0ba5ba3e933b4bda005bd41a9fcb190d3cb273",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:2f42d520a983ac9106078c77"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_101027.png",
+      "image_sha256": "44f12300325e1e97555b2e45e2b83626648a0318f4d442521be1e5a65c8fdfb6",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "1054c0a590950d66cc68fc5712246822a90b96dd30a5b61b861fdc94d3958bf0",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1783815da2160a09cfd46bf6"
+    },
+    {
+      "image_asset_id": "test/png/OECD_PROTECTED_AREAS_LTU_SAU_000011.png",
+      "image_sha256": "76df6b6ba4c477995f1cc0ef66628303fc3e77dce64ae7fe497a1ca133328f23",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "668b7ff6faf20e1b92fbe947acfa4b87019b76163d566982c71fd4a0efb467ed",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:2f8386d288539dc0403d2425"
+    },
+    {
+      "image_asset_id": "test/png/OECD_NUCLEAR_POWER_PLANTS_RUS_000002.png",
+      "image_sha256": "a30e010c0f964f1cfef0a51b41342b613c1229010e7a606be73ceff9769d09d7",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "8e868520885cb3f627d02776c295240df75f9d87d69276a70cfe4d97c7655390",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:3a39ba2334130827462c7cd6"
+    },
+    {
+      "image_asset_id": "test/png/50959481003520.png",
+      "image_sha256": "0a088ceb46abf853b0d1c8e6f26cccb99cb30b6c48564415aa56f90a1132a34e",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "6db825e6d35502736d96057e15e85b3a66627a7c5fba1ec215784de961d647d7",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:03679e9ea373a80c991e74dc"
+    },
+    {
+      "image_asset_id": "test/png/8340.png",
+      "image_sha256": "cdea6ce5db5461630701b1d43de1058496f3a3c453f103d4b109d9d657587f8e",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "c86d267bdc8690d1d863bf0fceccd2362ba82720c3d7912668108461eba2de95",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:4911a4b0863fd67c5dd64622"
+    },
+    {
+      "image_asset_id": "test/png/two_col_40160.png",
+      "image_sha256": "ce35d18bc3e7123a46e90abee64d680224ed68dfe53ea1badfc756cd939bddb7",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "01b6c40c900fb32179f37c06b4d01e9985a267f0f4ac6f9a54d3311883c2e61b",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:5e9cd27808551bf263d5ded7"
+    },
+    {
+      "image_asset_id": "test/png/two_col_44004.png",
+      "image_sha256": "8e3bf8e0695528802968eca0c510eb4cfd29efd9a3f49f095029e6dacaac9ef6",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "5a72ba589663da6baf6b9c024b000a429d2a8c99a399f84877444f7665b322a3",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:04bd93c1c229112e8a143069"
+    },
+    {
+      "image_asset_id": "test/png/two_col_2138.png",
+      "image_sha256": "f64a480b209ffac333e04f2d0381b1be6e83bc74ba5c74d339021ca4d053da4e",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "52a79e315540df799a4532648b07d003600de897286851dfd8bbcc649b634ad1",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:647da7281d043a86ccf2527f"
+    },
+    {
+      "image_asset_id": "test/png/two_col_22383.png",
+      "image_sha256": "c8bc50f26db49da588daccf20619b74c86422c1bd8765981a99cb4b143554a6c",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "6732dc0c112ed8cdbb806052e23f3e8517cb5f8df4aef681e5f7f68562d13f78",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:59a021ab8ecfe066e6763c85"
+    },
+    {
+      "image_asset_id": "test/png/OECD_ADEQUACY_OF_MINIMUM_INCOME_BENEFITS_FRA_NLD_SVK_000010.png",
+      "image_sha256": "87fb5fb5088957be742c79b5f80fb6132320ddd98a82943601dcea28813895ec",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "323077499b90a06e764867683b224476f7fadfd5412e22da7fe1ef2cf4b4051b",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:56c177611900aa1f5a9957ee"
+    },
+    {
+      "image_asset_id": "test/png/two_col_3712.png",
+      "image_sha256": "327d0fd737846e9282cceb8e90a95ad5406a7475c65525a431cacaefc30bc87f",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "d96c2d393284212c8064347f66d680e4bded9e1ad9b42a9cdd600bb52771609e",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:7f99075ea8b0994bd8e6a44b"
+    },
+    {
+      "image_asset_id": "test/png/21881727007008.png",
+      "image_sha256": "9a05ac1743a30ccd40abf98b8052e3b3e1941c8f27168012b86971e78805f06b",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "a7ff4f6a8be9f38821e20a2e4ebffe3867ef083cb7de7ef36b35c2524e86ed38",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:919f5224fdb9cf1d568c56db"
+    },
+    {
+      "image_asset_id": "test/png/5831.png",
+      "image_sha256": "a1a2e4c9a030c92661b418d12d17503c85156979c6b41532c8ec8d5e2480b69d",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "135ffd12661d48277c2aed9716157163650c392809c30af4fc5045db75ecc56d",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1e3a584621f96ad1c12c8d60"
+    },
+    {
+      "image_asset_id": "test/png/two_col_80126.png",
+      "image_sha256": "6bf7bb61d296a8e4e32c1580adeaa0294bad839ffe571ae3e2b79d1ef3388fdc",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "c71ddc4c393bfa3cb63160a4279f3fdc2d0a8d53a5d6dc67f64b4fa59851377e",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:6016a98e1a56cb2d11de163d"
+    },
+    {
+      "image_asset_id": "test/png/8746.png",
+      "image_sha256": "a671f2f2283a71602d31336ac20c833894e4856d59f1807f702d4241270e13e1",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "13c1cd72d590ec6d17f4def1bf4d1ae1dbb308ef4858603e776f23f0c03c2437",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:6ee5786d0d0afcfa26799fd2"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_60698.png",
+      "image_sha256": "7640d2d4b47700e8ce0b3b22fe04a48928d6a401e603c96fcb594ef67d6ec647",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "a09e50a10753a7129d234d8077c2099b10dc33ed46c033d61c3d650ea605e6cf",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:14bad07f636a560286ce2f49"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_60513.png",
+      "image_sha256": "354f2589e06cce03f8ee986dc90d96434e898d067cc61e93cdd8b50ebad1913a",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "b5af4dd9ee59f1ce4d83d30c4704cf9f3599703a171b83d2e9557315a684309d",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:ad39282c1f6ad1f547d9d81e"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_959.png",
+      "image_sha256": "c18dbc9380de439fa552d64e9132add1d747ab7679bdc83c5557330fab0da3df",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "99fffbad4d73e27891430a30d662cf25ee2911e866da3a94c5d2d3a5fb2c891c",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:3a9294128efe94b07ad08e3b"
+    },
+    {
+      "image_asset_id": "test/png/two_col_60750.png",
+      "image_sha256": "9aabd58c8c8a98aeb76b588ffc7aa699a26049ae04bc57802de9477a2ea07272",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "53bda661cdcfb87f7af28a60ea41a800d867004c6684db9a600188265ced60a7",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1cf548c277bca0f8aa6b83e1"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_60150.png",
+      "image_sha256": "857d3faa5ca5f50221d18294de1192c14c0ce081eea6d40135d261bb77eadd55",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "3f9325cb30d4b8ad3991b24a28107db01086c7bf79c4a5d3466029ccf46a3c59",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:045bd36c308fa328661dd3e6"
+    },
+    {
+      "image_asset_id": "test/png/08524901006324.png",
+      "image_sha256": "ee7ae75f50103a77d0b3677c22729efae9d627a7b17585894fd0f56e99bbf8cf",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "29aaafa6704b8139099c28b74635e7a992504fd672599bd1b653647083d37403",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:7202084b79d622f7f560d26f"
+    },
+    {
+      "image_asset_id": "test/png/03672594001226.png",
+      "image_sha256": "4ff82df0442fab85b361d08ddf2f6efc080001940a70180ed50421ae53788af0",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "6b5111f322126f3a3237c70122b7b81c3ae895b95353d031096db8a41bce7ac4",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:9338c8199ac8155adc0ab74e"
+    },
+    {
+      "image_asset_id": "test/png/11627839005738.png",
+      "image_sha256": "154c5d242ccf3ead5d89360218891549a2a3743b8a607e174f1b8e73cd59bcf0",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "0eea65280e8a94b321eb8be5c533e06c16bf42e5eff7ac0f62c008e5e05ba8b7",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:4d5dd10ed824cc5b473a274e"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_101067.png",
+      "image_sha256": "2793e6019f5e1ffaa8bd6b9f1aa680e890ee6eb777713a48a435bb5057231a61",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "a8c8b08c2e408d43e410f578508a1cba8afe2a4550bb600bbcb5e458d529815c",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:e03b613ebc3b82e0b8baa6d1"
+    },
+    {
+      "image_asset_id": "test/png/4526.png",
+      "image_sha256": "0a9ca5a72ef785e01d146b5c04ca6171dcc8d7a31c8397580a28901cde6f4d9d",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "dbbe9c1d914eaf372da8436d95a1847f0902c3f8dbd8a14ad16bd233e62f50b7",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:0c59422ace6e44e9f45a31e4"
+    },
+    {
+      "image_asset_id": "test/png/OECD_NUTRIENT_BALANCE_SWE_USA_000076.png",
+      "image_sha256": "d977b6ff3f63d27e7d56bb45d1bf068c579999232de8373017fd16e75acf523a",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "c53cd64a311e1a705f48b3eff12fc5c8f9b0b15200c52c2251cd7467b152da21",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:db79791c5e81e72165b0e247"
+    },
+    {
+      "image_asset_id": "test/png/two_col_40380.png",
+      "image_sha256": "33c693b07c1c3506175f575dda068606febf49f8ec05f850baaa1a0e4e752581",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "3d669f6eb2cd18a54552fc5a016860acbd4e4838ea459de7bfa88b01d7bc7756",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:2e39ee557025f08d463f2694"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_80088.png",
+      "image_sha256": "992fc904d237adc292d8167152257c001af182241476f797034ae6f467570dcf",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "bfdb4d3b6debb4aab2235bd1c33a1ecf1c0dfeada4790eec60cba191d6733baf",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:599b338a4d3060c7f95ba373"
+    },
+    {
+      "image_asset_id": "test/png/00795994017065.png",
+      "image_sha256": "7da589cf3d1c6f886b399e95d0bf347a4dbe049841e4a26d2c5a566c2118004a",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "837cc8b55353959334fcdd59aaae0be3b34184ac4f2b4c754694f9b2fee5a0ad",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:b4a948cc1f7c729878da2727"
+    },
+    {
+      "image_asset_id": "test/png/12797.png",
+      "image_sha256": "4e33f2b270d6d1096afbe4de4f034eda684a382aae737dd2edb076d52437fb26",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "fdc58c5239b1e2e415dfa66def0d0cbeff0e55f545c0e4e9572f22ab1ce1468d",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:5b3493d1dd2f67612af5508e"
+    },
+    {
+      "image_asset_id": "test/png/08263936005626.png",
+      "image_sha256": "126c4d36b509bd7fe23eb82cd362ce64a904256b5ff85e475d3206528f7dba69",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "7eb6d4f7e482b7dfe0fffe300f97cc6e83d848dccb1ed2e8d61e0694b2176f27",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:be8a02cd57e4f4721faa7767"
+    },
+    {
+      "image_asset_id": "test/png/50392747010463.png",
+      "image_sha256": "659d7beb60697e30075ad14517f57700a801ecd53a98355edb4249cbde729e50",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "caf4236e6cba143549d2ed24ca99c7b506a8653dd266abbeb1a8163d495a0999",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:4c80c2acdf99afd1f2c2ec0c"
+    },
+    {
+      "image_asset_id": "test/png/two_col_102054.png",
+      "image_sha256": "36b631d944f24470eb91b53e5ce839cb15c4969dbdb7250cd4de2b012581db3b",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "fb9e8e58f33a02708e30949bed13b042c48e051bc4196b02211ca4592e9515b3",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1f269234d66fe5beb9a07ed2"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_100291.png",
+      "image_sha256": "11dbd11b005d983b193ee446457a6507baa1e1f227ff1fae2255819f5fdd1bae",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "33e2dadd068255ab1897241a78d50a86fcd2f84d7b83177e4b686f01cfe52f27",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:2a1b246f8740c97025cf44da"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_852.png",
+      "image_sha256": "e831fd6cc702d4477ca37eb2af38519f82af00f0d2cd536e4ff4542e03532a6e",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "a1f9369e092bf089395c9d2b58dd8089071ea497b2f6f94bd2622dd3332c541b",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:9dc12cedc89412a4e1056407"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_20801.png",
+      "image_sha256": "c9cf6202e5d6917e10fbc211c48f3de1a9341a494c36b134d6f8e9eec0bbde42",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "247def1ae927b25ffc16064972c2e3a71392d6ce8f7b4ae13c1e44cd732bf2bc",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:68f0ca1bea32d4498e4eee26"
+    },
+    {
+      "image_asset_id": "test/png/two_col_3582.png",
+      "image_sha256": "f6d4f837f2d0e7d9d7ee179336a1a624e2dcc495b8500110e67cb84219132549",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "11b5cd1eb25445f06f0d85ea53f2cc4cab2c66773cbfb76ca8abd4b65401e05e",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:2a600f71dd9a19703d56cba1"
+    },
+    {
+      "image_asset_id": "test/png/OECD_AIR_AND_GHG_EMISSIONS_BEL_BEN_LBY_PAN_UZB_000121.png",
+      "image_sha256": "0691909be6931af2b6992afc82acdbdd88027266cedd34eba3993c49cc904443",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "25bd3c0e1e24b52804d6a326168b241affd97460c0db15be64e1b1e7b63d853c",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:924685700f3a30afef3f60f3"
+    },
+    {
+      "image_asset_id": "test/png/two_col_100372.png",
+      "image_sha256": "ce43028a63ec48b0aa5dc57cdccfe1853215ab4bad77bb2422959afd07fda49b",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "144dad8b998880f2830300cca93bce10cc4e9309e6ee5f56fb691d32550e1fe5",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:0e2a20e7505a4c3a25a05952"
+    },
+    {
+      "image_asset_id": "test/png/3389.png",
+      "image_sha256": "afb677bf2cdb9e14f3f922576549eb34714160e9c24651699b895e9d4d274406",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "01c1b729cf6268634a7b38a05bf8ffa70a34d55f06b0ec94823cd24a8f9326fc",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:5071759b5c76c43fb5d048a9"
+    },
+    {
+      "image_asset_id": "test/png/5904.png",
+      "image_sha256": "cf5bee69bfab7b365aca0fe56f31f0aa8a8b0badabe442fedb0756313018dd8b",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "3d70c815dbd57014044cfed747ba104fc4702894c8cade5f5390d6049a38961a",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:0059ac8dc6c9aa504dad9810"
+    },
+    {
+      "image_asset_id": "test/png/two_col_41814.png",
+      "image_sha256": "cf608adadb1a419c87c162b43e9e62ebb7fc8231da3a107372ef85eceef251de",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "510a2dcd060bb86c40cfe055f9beb24247ccc2365e3f534bf4b1d77032f8f7d4",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1a4f888073bbb7dc9b864bae"
+    },
+    {
+      "image_asset_id": "test/png/10146.png",
+      "image_sha256": "30bf3d08cf75e923cd94e6bacd9433e9fe737b18ae1874c1fbdb0fa0ebdf049a",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "d3e25d1c9e2a476275927b8c07fc1801ca5ebe28567bba3ad6b2004bc167b599",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:81a01d8578668e07eca2c02f"
+    },
+    {
+      "image_asset_id": "test/png/65934022004372.png",
+      "image_sha256": "d1cbd09413c6ba29b221d8394c2410ceebf18442ad4d706e5a7e35f26fe76ca7",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "18502b532220ce9ba23818a6c8d272b6d0e803a305269200b319e004421c9a6e",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:ab7f96e4e2eb5db2cd40bcab"
+    },
+    {
+      "image_asset_id": "test/png/7018.png",
+      "image_sha256": "99073a2e34f9dfdb3bfa750711eaa376d51b7b1df80fcb36dd5aa11201544cb8",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "650448b45b47613daee2b9128d1cfbc18f0ed76e433092ebe4a7852764df3ec6",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:063c5f9a3eea2df7ae765c15"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_60679.png",
+      "image_sha256": "30e34e2f6a9073539394939d382b7baf15fc49ba966e9c600250b109bc74fb3d",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "23212cc090305354bc4fc884d1f7e2ace9bbcc41acabbdfdac12557f2e094bc1",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:12b3189e53e828a7005b82a0"
+    },
+    {
+      "image_asset_id": "test/png/30922516017795.png",
+      "image_sha256": "01b16b9f9434368646a0175a4f576db108320ff7fe64e6a2f15a8542b2a1ccf2",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "5c5b309c7b01d944dfcd5e44201e225baf4d670181e7bb30b20d01153c325764",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:6746f938c859fc0352a4ae83"
+    },
+    {
+      "image_asset_id": "test/png/OECD_SCHOOL_PRINCIPALS_ITA_SGP_000000.png",
+      "image_sha256": "5b4daa0e01f73d7c3396ed721db1ed587ae23136b04d60c2f2f5c8bc55887ffc",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "dffb16c01816ee5099c07174fa012b111e8d896ced17a8cb5b5b6070020665ca",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:9f7a38c053b113cf2efe4820"
+    },
+    {
+      "image_asset_id": "test/png/12793.png",
+      "image_sha256": "33cc069625eb9cf423b3e3cf0af09c9204d0c659362ad84413007a8d2ea1e514",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "a5613cb835d3e44a7ee724de937917cb1a031c1253ca9cf447ab5354444244c4",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:6570fa96f3a0fa6d661c8588"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_100992.png",
+      "image_sha256": "343ac678fd722583175b57e8b7d5a39b8619e95c6bb436efd248606bc9e247be",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "908fd5ea7225f744bdedd607439268a74ad667618b05acaeee2ffdf192fa9390",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:0248691d62c1cf11039c3128"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_101141.png",
+      "image_sha256": "719971cc619dee6d859960fb47447bcabe77a3c8b310e5317009d001f646fe2a",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "548cc0949fa22bbfb81f3f87f18608f22d0e5e3a8b2f5bbb44b6bdbd6b566e14",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:3e63a7b438f6d282ed15d440"
+    },
+    {
+      "image_asset_id": "test/png/two_col_81161.png",
+      "image_sha256": "d7ff5d25f4bf5c641af55a0177427a5b6900641db71d3e8b6c9dad8ae8492f9b",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "01b9fff55616087766b266eab4ec19285bb9a5e7fd094bb8203315b102a729d0",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:2cda7423ce5cf434510c24e9"
+    },
+    {
+      "image_asset_id": "test/png/29008706007362.png",
+      "image_sha256": "fda530341759ef4a86697480961860f50f5e49ea67f678597627b41afc85f3a3",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "ab1a93c4c06223506154dcd9a881dfa2e822faf8d388efb60b0280cdbb616d42",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:24ef29f9e82c9e5301668b69"
+    },
+    {
+      "image_asset_id": "test/png/44409110004750.png",
+      "image_sha256": "973a016cee1eed217a184ae8aba4d8dd7e07a69b0daf46acad3600a5f619cf55",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "bf919577029d92306bdf647aa32231b606103dbeeac06835487b267701bda35a",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:1e75a46ce1ef24d1606f4827"
+    },
+    {
+      "image_asset_id": "test/png/two_col_102898.png",
+      "image_sha256": "5d162496f60ca6c9068baeeb178d436aea041f120d7f7f9275a7f88da8ef84a2",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "1e4d45210c1c30dd9166d22d30bc81d1644d7ef9252fc21bbe5a7ddcf8d517a3",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:77946712e9ca93248aa47d9c"
+    },
+    {
+      "image_asset_id": "test/png/multi_col_20350.png",
+      "image_sha256": "c6723f204e226f8373ee0d82016e7204dd607f62f235d5ca2bf39d63d82a66ab",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "ef0430dbd870e653bc7aaefd1f453535c46214a0e6be6853b654344036393574",
+      "source_split": "test",
+      "task_id": "chartqa:test:human:763ce541999d5a5561c56577"
+    }
+  ],
+  "name": "final",
+  "schema_version": "chartqa-manifest.v1",
+  "seed": 20261016,
+  "source_sha256": "07ff3e77ecaaba00b2717733806889ff2de1322e36b4367294b6502d0f9709d0"
+}

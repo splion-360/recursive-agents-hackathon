@@ -14,17 +14,18 @@ from memory_distillation.benchmark import ScoringReference, TaskInput, score_cha
         ("50%", "0.5", True),
         ("0", "0", True),
         ("0.01", "0", False),
-        ("  YES  ", "yes", True),
-        ("New   York", "new york", True),
+        ("YES", "yes", True),
+        ("  YES  ", "yes", False),
+        ("New   York", "new york", False),
         ("blue", "green", False),
     ],
 )
-def test_score_chartqa_uses_relaxed_numeric_or_normalized_exact_matching(
+def test_score_chartqa_uses_relaxed_numeric_or_case_insensitive_exact_matching(
     prediction: str,
     answer: str,
     expected: bool,
 ) -> None:
-    """ChartQA accepts numeric answers within 5% and exact normalized text."""
+    """ChartQA accepts numeric answers within 5% and exact case-insensitive text."""
 
     reference = ScoringReference(task_id="chartqa:test:001", answer=answer)
 

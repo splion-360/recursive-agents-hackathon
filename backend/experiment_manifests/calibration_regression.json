@@ -1,0 +1,84 @@
+{
+  "content_sha256": "1930c9db7742be4adacf6e2e40ffb259f884335946c5558f4f53dcf98497ea6d",
+  "dataset_name": "ChartQA",
+  "dataset_repository": "https://github.com/vis-nlp/ChartQA",
+  "dataset_revision": "044eabfc306abfe9340c5741f0093aefc5973d06",
+  "entries": [
+    {
+      "image_asset_id": "train/png/5112.png",
+      "image_sha256": "e9fafbc1b31e76f3412d96b937b815cf2389ebc9764a982bc44500473e46b203",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "45d83f83c853203e11d83d2c9b81b43820d4cc5cb2873c3dfc66baa5dbe55d8e",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:711a67ecb8b8cca548ad92fc"
+    },
+    {
+      "image_asset_id": "train/png/17295.png",
+      "image_sha256": "d5179fceb9fd394ebaa19bed9095fdc8eb1218bd19cf98281fefacac98b155c1",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "82e72e9ccaf189b71115beb4ef7bdbe221436223c2864e0df0c9244bf8d6b44f",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:9427653f8eb4a9be02b68736"
+    },
+    {
+      "image_asset_id": "train/png/two_col_40180.png",
+      "image_sha256": "485e5ba4574bfc512e985492bdd8dc086ffebce4101a6ef5d6437e90de8d3abd",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "8f3fc95b57f8b4b560015509121bbd9e9f9f0c835d7b8f0a171f835b0cb206e8",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:c091284db93c5251c5569972"
+    },
+    {
+      "image_asset_id": "train/png/multi_col_60051.png",
+      "image_sha256": "57716de7c64007c097e525e8d6e94dd0314fea6dfbf74fdbae781c44d40de075",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "8292b31d45066eed2f03656733528dfdaca61fda0aab75f632a34091e8bb3639",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:939a6c1fe2a8382d903078ef"
+    },
+    {
+      "image_asset_id": "train/png/two_col_62893.png",
+      "image_sha256": "fda24a10b3369fec79d8c92341394763843e606b4a366f826b98e53ec92e6989",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "7dabb6a8a43734ee76497ecf04f54e58b0d409f6dd40d835014c4d82446e283d",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:83c055fd986bb49b2a3fcba3"
+    },
+    {
+      "image_asset_id": "train/png/multi_col_100322.png",
+      "image_sha256": "5210b23b29177ea1a065b6e66ebffe8242cef61532e51e493a9cfbb4486bf293",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "285fdc133e86150c31eb26bc701a642efdc14b85c5a073ea9c9cfc4fac309d4e",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:7458fc2105055ecb1d83af3e"
+    },
+    {
+      "image_asset_id": "train/png/1072.png",
+      "image_sha256": "5a61e26fd04511f13795f95d7f87d354de264c63abfb0642d2f256add0f9ffcf",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "a94f4fea255c48566882330031af797a00619681c62923f3d0ecb8397fe0e377",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:5c752cbc42ac36bc681e70a5"
+    },
+    {
+      "image_asset_id": "train/png/87897560003131.png",
+      "image_sha256": "81c7efec32082760e5cf888ac74a0a68a7096be924e2b783614bb4433ad11544",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "7d4fa10d7023b7398dfe9cc634507825a79ec692fe693e8ffbdd29e831e0f971",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:67cb1ab4400cb52d030660d6"
+    }
+  ],
+  "name": "calibration_regression",
+  "schema_version": "chartqa-manifest.v1",
+  "seed": 20261016,
+  "source_sha256": "83dd81b43e65db593037894a29c7b85dd1c9fc96d0e0b7d23e537a9ff6c35556"
+}

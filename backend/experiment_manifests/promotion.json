@@ -1,0 +1,282 @@
+{
+  "content_sha256": "c5b1ea2a83068796a6f5934a9b45e122a4e68da080ea9d9f59dff361adf6a68b",
+  "dataset_name": "ChartQA",
+  "dataset_repository": "https://github.com/vis-nlp/ChartQA",
+  "dataset_revision": "044eabfc306abfe9340c5741f0093aefc5973d06",
+  "entries": [
+    {
+      "image_asset_id": "val/png/47413894001985.png",
+      "image_sha256": "d1e2943f2ff5573134c3b9abb8673b82b42118cd186f06a990aa99c7fd986299",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "05ca32a97ae7e2c1b998501028b2eb0f790056619a05457065d0c55cf2056405",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:4305b07b2f3fa702ecdce1e1"
+    },
+    {
+      "image_asset_id": "val/png/multi_col_60444.png",
+      "image_sha256": "32f50567f230be379ee9b7ea99ee4129cba497d578c9df70eda83df473ca37c8",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "9e5560f06c9f955ad0f661bf36e11e94c3c305f08bc9c4dba6b4c1d77c2af9ca",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:116e58a2ce43e1c88551c199"
+    },
+    {
+      "image_asset_id": "val/png/multi_col_267.png",
+      "image_sha256": "73badca0e5996f8cad29e59e660d2497af7aa55ceeff57ab6a84ae45dbd16e83",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "28bc34087f7b5537e736342710da296401293682847f9307579c2dff65ae6f8b",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:06f31d518a13c212f0b2c899"
+    },
+    {
+      "image_asset_id": "val/png/OECD_SOCIAL_SPENDING_ISR_NZL_000089.png",
+      "image_sha256": "095af81ff334b730bf9947120db5ff94d8c63eb97a5069285e1c694933a8f16d",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "563f7ff4b4e10a2dccdb308fd1dd5b704c9a4c013ed52422cc8d8eb8a8be065e",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:231a3e7aa2d8baac166bcd73"
+    },
+    {
+      "image_asset_id": "val/png/5509.png",
+      "image_sha256": "c64369c3bb44b48e4e8c36e37c6c102febcde000f15903eac1f5de9c6cd6a89b",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "bf0d40feabfab71211a2aa9b89783de8b84bf6bbf25a9351a0870e4a37c24890",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:2335d509621718ae46659944"
+    },
+    {
+      "image_asset_id": "val/png/multi_col_100840.png",
+      "image_sha256": "548ce5d3f777e424c5b61751ed574153709c2ef34e1e32d03e0110e4b6f60291",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "de22a97eb0186ac277f17c63a9f1e81aac4189ca20991802340040624ce701dd",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:a191c9dcb41d642b68b4708e"
+    },
+    {
+      "image_asset_id": "val/png/2595.png",
+      "image_sha256": "1bf3d46a2b51a76bb7ce012fa7b168ef564834a7615c0f85adab3e36f1b3a1eb",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "10aef26f181742a45a538ad0faf695820cbea5bcea179d07348abf2f2d6363d3",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:56a6e3bfebf176701c1a4db6"
+    },
+    {
+      "image_asset_id": "val/png/86071080009874.png",
+      "image_sha256": "20729095e81c6b756550219dca2a438a66dd199dfa72011bf512020b7161424f",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "16ce1646a56a20b09ee7c04b582d9f493bf7efe59970ccf0ce246a2ad2e651d8",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:0ab8a1dcfb706700ab5f9618"
+    },
+    {
+      "image_asset_id": "val/png/two_col_63.png",
+      "image_sha256": "8623031c56bc7f7f1058ab9fcdee343cd127b6aea8c7d38ef835783fd17d631a",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "073bc2329fb11d8eabb02a9d30a7558f649dbdd37f0a263a878ba2f27c009db6",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:39e56742e5f326aa9d3d0eb8"
+    },
+    {
+      "image_asset_id": "val/png/9812.png",
+      "image_sha256": "1eb117cf45d889c80b1e9d0b754034343918ca2eccb828321eb85db2ea47ba05",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "554876e3558fc9204dd67ab4abeda0790373a9849a1ee31b57a39ce57ed2af2a",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:49b0d675fb54bcc84f95d295"
+    },
+    {
+      "image_asset_id": "val/png/03250329017073.png",
+      "image_sha256": "64d64192873b0911a343150d99a1b81e8a93bcafcad4901cebd54b32c817f46a",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "54cb58bc3b55f5e70354e710f2fb1f5e4190a523e986382c943ccd8905b00eff",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:30dd9f5f6a500a4c7e7890d1"
+    },
+    {
+      "image_asset_id": "val/png/02348983021349.png",
+      "image_sha256": "9fd22ca48629e5877dca0a3e02924a554ad1e7ea9f9cf6ce4a8662dd7798b6b9",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "a6b1ffee2263c63f9205ec58a17ca1fd7bc9b39192e6d3745ce0a75ea85b19db",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:791078fd3640447b2eef1754"
+    },
+    {
+      "image_asset_id": "val/png/two_col_3364.png",
+      "image_sha256": "48fb7c1082b40ea0a369f1517ebdae211cbb49c8455e14db8ffc8969a559eca4",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "d2c5824c8e93056bb6e870f3c6074dafc7445b515b57b8706278e2d9e4ab4126",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:217661d342c0922213fb6377"
+    },
+    {
+      "image_asset_id": "val/png/29893868000920.png",
+      "image_sha256": "59d9782553d39e728ecbedaeae0eafe241cd77b2d86c62a13bff3cb9131efbc2",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "7154a2406630d92d0ccd7e5be76f0ae86b8f243fe3d29f8e7e6e280960ac8999",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:d5fab3bb05d2f43a8ee91779"
+    },
+    {
+      "image_asset_id": "val/png/24779936003610.png",
+      "image_sha256": "a83a8ad310538f39d7b26acdb92b7b793aac30d4f5b6efa5f66c3e851780061c",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "9858b1675361acefd4c979566e278725f5d9032a37582c7420af22c61d41bb2f",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:2e595d49d1320ee550e443c8"
+    },
+    {
+      "image_asset_id": "val/png/OECD_REAL_GDP_LONG-TERM_FORECAST_NOR_POL_000035.png",
+      "image_sha256": "e09ab274eff7195e378f0e1a91fe589c648815c8ad7a1165c613e2556b5008d5",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "f56d5dd62b0d4988b45025b4c90e12bf2cfe0fab72335450fe38c53a3cddecf2",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:21253cc7933d0a87a83a4b64"
+    },
+    {
+      "image_asset_id": "val/png/30834556007402.png",
+      "image_sha256": "8982501944bc9894f7f89d24f0bd93759e76f41ad86ab5bd7efa402f86b398f8",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "631462cbac13597acac5ef11a18caf1e410ff15dfc0e1edd6c0fd7550e81d10d",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:34796949e07ca57e3a43dcb7"
+    },
+    {
+      "image_asset_id": "val/png/02348983021411.png",
+      "image_sha256": "431882f8580f0f22e47905573e2ce5cca839a8a0aa02b4b27c12af732d498a9f",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "effdd9ece7e406c8a3593be083e254052bb436ba786dcf27545d750adff58799",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:d6f20285d4257b3a47792f03"
+    },
+    {
+      "image_asset_id": "val/png/20792199003381.png",
+      "image_sha256": "f0bac77481114e0df4cd7e37119c771c3aac2dadfa230c39a5ec76d67b22cfb0",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "73bcc7654bfe93397fd81ce638e5d884c4b04c27bbdc9caa5a25d98133cea74d",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:8da4d6bad21e5adb098ef83f"
+    },
+    {
+      "image_asset_id": "val/png/7940.png",
+      "image_sha256": "0a1bf3a71c3ab3b81c7ceab27dd1f177a82a1527d02334d80e046be00a8596f2",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "7417e780c00d8d576250481173878045e355db69eacb462289a3c3cfa270c1d2",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:8bddc4800e2f3d3aa91eff29"
+    },
+    {
+      "image_asset_id": "val/png/17081.png",
+      "image_sha256": "513d5034a3211974555ed1d5ade4245f1e0e555162fee30123acc11278bb493d",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "4994148c195d629df118e6587a5c575534cbd95b4aeed36fae6c29887963f12a",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:7f3fe453d9e028c5de525980"
+    },
+    {
+      "image_asset_id": "val/png/3408.png",
+      "image_sha256": "46d213783d4bbb80e9263814a33c0561af9a45bb0f965ea5b0aa68b1d54d8961",
+      "operation_type": "lookup",
+      "question_form": "other",
+      "question_sha256": "a37be30b8b15e44c053191eddfae33c81449a128c4f7b740837986b6516ed0d5",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:a0d5c9de8c33c35e24e22bef"
+    },
+    {
+      "image_asset_id": "val/png/10688218006528.png",
+      "image_sha256": "e391cc16bba92d6dd24e80a5c43443c26f3fa2e70d5a5c231a3abd452b01f87d",
+      "operation_type": "arithmetic",
+      "question_form": "wh",
+      "question_sha256": "e9caefb3b9d0ba419068fe6d4f57f316db1f5583ed29748b765986b0cb487fd8",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:0afb4862d6d1b146abdc4d41"
+    },
+    {
+      "image_asset_id": "val/png/two_col_373.png",
+      "image_sha256": "cd68de14e380d2e5a67349cf21b1c0c6e22fe35fc2cd201b58a727a22e758c5b",
+      "operation_type": "comparison",
+      "question_form": "wh",
+      "question_sha256": "c787cbc5d7c579dfb194b3230d07a28ed4bca00f766b936e68d5782926536cf2",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:3e1c1d55fd7d2311b42a3fd0"
+    },
+    {
+      "image_asset_id": "val/png/70101677022779.png",
+      "image_sha256": "c946d06bd8d95be9f41ca6230c025883bde1a7c81f65c19fee54ccb3f0379985",
+      "operation_type": "lookup",
+      "question_form": "wh",
+      "question_sha256": "26f6b42a5a9cd0b0bfbb50f9f8552b14c1e58365b70433c02449f1541f9ea68a",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:14c853dc51c04443bf3b4a96"
+    },
+    {
+      "image_asset_id": "val/png/2676.png",
+      "image_sha256": "9c0173013727ac025875c6ffca82e5fd4cb8529f1c55078d27ba91fa2900285e",
+      "operation_type": "arithmetic",
+      "question_form": "yes_no",
+      "question_sha256": "a0488034d41546309bccd1d386eb71a3f8d7d8f93ba57645ae6a69e72e2847b4",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:2cf7d1dd23aec40ec9c6d719"
+    },
+    {
+      "image_asset_id": "val/png/30999827006737.png",
+      "image_sha256": "b8d15d187b1e60b1b56dd02317120f6649a1ae0ee58307327b4910e615006406",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "c8916757e17a5d261b2ac9d56127d21bac40205e2ccc4e9ba621921ee79e66bb",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:27959fd28ad7e6810f509c4d"
+    },
+    {
+      "image_asset_id": "val/png/OECD_LONG-TERM_INTEREST_RATES_AUS_AUT_LTU_NOR_USA_000021.png",
+      "image_sha256": "a0e5f77e0bcbb9b6c147afc8bfbfe424d7d95bc4bbfa47a8aa6a054ce778850a",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "d82f9f4c0025c73977a4f9ac23e1520d7be0f9b251f9ea1a72b80f314ef8f045",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:ca8d6d85b7718305fa26c781"
+    },
+    {
+      "image_asset_id": "val/png/18820164002528.png",
+      "image_sha256": "649a29a8630af7f1d3ffff0b9892df1708548dbbfaf2ec9f71f913531382000e",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "f242b34ba400e1a835ef20336bf9ba51d7460b11e102d09e61a55deaa7245959",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:245b4f62e70221844a7a0132"
+    },
+    {
+      "image_asset_id": "val/png/75903579005297.png",
+      "image_sha256": "8849c95f678fb69058e6ea94b781ef93f629763277bc194dec237c5fa367ad43",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "af463a79415d6955bad3f5db419025f9abf518eea9f03865272063bcd8b1153b",
+      "source_split": "val",
+      "task_id": "chartqa:val:human:17a77f1e227bbc5ff5a36bf9"
+    }
+  ],
+  "name": "promotion",
+  "schema_version": "chartqa-manifest.v1",
+  "seed": 20261016,
+  "source_sha256": "2de0d3a1eef01ae4ca3ce4684e4620f684f7adb2d80d1a007da21095a6df5200"
+}

@@ -3,6 +3,7 @@
 from memory_distillation.benchmark.chartqa import (
     Score,
     ScoringReference,
+    TaskAsset,
     TaskInput,
     score_chartqa,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "ManifestEntry",
     "Score",
     "ScoringReference",
+    "TaskAsset",
     "TaskInput",
     "build_default_manifests",
     "generate_default_manifest_files",

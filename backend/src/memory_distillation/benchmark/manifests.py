@@ -11,6 +11,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memory_distillation.benchmark.chartqa import TaskAsset
+
 SourceSplit = Literal["train", "val", "test"]
 ManifestName = Literal[
     "calibration_discovery",
@@ -19,7 +21,8 @@ ManifestName = Literal[
     "promotion",
     "final",
 ]
-QuestionStratum = Literal["boolean", "count", "arithmetic", "lookup"]
+QuestionForm = Literal["yes_no", "how_many", "wh", "other"]
+OperationType = Literal["comparison", "counting", "arithmetic", "lookup"]
 
 CHARTQA_REPOSITORY: Literal["https://github.com/vis-nlp/ChartQA"] = (
     "https://github.com/vis-nlp/ChartQA"
@@ -57,7 +60,8 @@ class ManifestEntry(BaseModel):
     image_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     question_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_split: SourceSplit
-    stratum: QuestionStratum
+    question_form: QuestionForm
+    operation_type: OperationType
 
 
 class ExperimentManifest(BaseModel):
@@ -71,6 +75,7 @@ class ExperimentManifest(BaseModel):
     name: ManifestName
     seed: int
     dataset_revision: str = Field(min_length=1)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     entries: tuple[ManifestEntry, ...]
     content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
@@ -81,6 +86,7 @@ class ExperimentManifest(BaseModel):
         name: ManifestName,
         seed: int,
         dataset_revision: str,
+        source_sha256: str,
         entries: tuple[ManifestEntry, ...],
     ) -> Self:
         """Create a manifest whose digest covers every behavior-bearing field."""
@@ -89,12 +95,14 @@ class ExperimentManifest(BaseModel):
             name=name,
             seed=seed,
             dataset_revision=dataset_revision,
+            source_sha256=source_sha256,
             entries=entries,
         )
         return cls(
             name=name,
             seed=seed,
             dataset_revision=dataset_revision,
+            source_sha256=source_sha256,
             entries=entries,
             content_sha256=content_sha256,
         )
@@ -112,11 +120,14 @@ class ExperimentManifest(BaseModel):
             raise ValueError(f"{self.name} manifest contains duplicate tasks")
         if len({entry.image_asset_id for entry in self.entries}) != len(self.entries):
             raise ValueError(f"{self.name} manifest contains duplicate images")
+        if len({entry.image_sha256 for entry in self.entries}) != len(self.entries):
+            raise ValueError(f"{self.name} manifest contains duplicate image content")
 
         expected = _manifest_digest(
             name=self.name,
             seed=self.seed,
             dataset_revision=self.dataset_revision,
+            source_sha256=self.source_sha256,
             entries=self.entries,
         )
         if self.content_sha256 != expected:
@@ -133,6 +144,10 @@ def build_default_manifests(
     """Build the fixed 8/8/40/30/60 split with task and image isolation."""
 
     _require_unique_task_ids(records)
+    source_records = {
+        split: [record for record in records if record.source_split == split]
+        for split in ("train", "val", "test")
+    }
     pools = {
         split: _one_record_per_image(record for record in records if record.source_split == split)
         for split in ("train", "val", "test")
@@ -164,6 +179,7 @@ def build_default_manifests(
             name=name,
             seed=seed,
             dataset_revision=dataset_revision,
+            source_sha256=chartqa_source_sha256(source_records[MANIFEST_REQUIREMENTS[name][0]]),
             entries=tuple(_to_manifest_entry(record) for record in chosen),
         )
         for name, chosen in selected.items()
@@ -204,7 +220,7 @@ def load_chartqa_records(
 ) -> list[ChartQARecord]:
     """Load human-authored ChartQA rows and verify their referenced image bytes."""
 
-    records: list[ChartQARecord] = []
+    records_by_id: dict[str, ChartQARecord] = {}
     for split in splits:
         annotation_path = dataset_root / split / f"{split}_human.json"
         raw_rows = json.loads(annotation_path.read_text(encoding="utf-8"))
@@ -227,17 +243,19 @@ def load_chartqa_records(
             task_digest = sha256(
                 f"{split}\0human\0{image_name}\0{question}".encode()
             ).hexdigest()
-            records.append(
-                ChartQARecord(
-                    task_id=f"chartqa:{split}:human:{task_digest[:24]}",
-                    question=question,
-                    answer=answer,
-                    image_asset_id=image_name,
-                    image_sha256=image_sha256,
-                    source_split=split,
-                )
+            record = ChartQARecord(
+                task_id=f"chartqa:{split}:human:{task_digest[:24]}",
+                question=question,
+                answer=answer,
+                image_asset_id=f"{split}/png/{image_name}",
+                image_sha256=image_sha256,
+                source_split=split,
             )
-    return records
+            existing = records_by_id.get(record.task_id)
+            if existing is not None and existing != record:
+                raise ValueError(f"conflicting ChartQA rows share task ID {record.task_id}")
+            records_by_id[record.task_id] = record
+    return list(records_by_id.values())
 
 
 def load_manifest(path: Path) -> ExperimentManifest:
@@ -257,6 +275,49 @@ def validate_manifest_entry(entry: ManifestEntry, record: ChartQARecord) -> None
         raise ValueError(f"manifest image hash mismatch for {entry.task_id}")
     if entry.question_sha256 != sha256(record.question.encode()).hexdigest():
         raise ValueError(f"manifest question hash mismatch for {entry.task_id}")
+
+
+def validate_manifest_source(
+    manifest: ExperimentManifest,
+    records: Iterable[ChartQARecord],
+) -> None:
+    """Fail closed when the local questions, labels, or image hashes have drifted."""
+
+    if chartqa_source_sha256(records) != manifest.source_sha256:
+        raise ValueError(f"{manifest.name} manifest source hash does not match the dataset")
+
+
+def load_task_asset(dataset_root: Path, record: ChartQARecord) -> TaskAsset:
+    """Return only one verified image payload, never a dataset path or sibling asset."""
+
+    root = dataset_root.resolve()
+    image_path = (root / record.image_asset_id).resolve()
+    try:
+        image_path.relative_to(root)
+    except ValueError as error:
+        raise ValueError(f"task asset escapes the ChartQA root: {record.task_id}") from error
+    content = image_path.read_bytes()
+    if sha256(content).hexdigest() != record.image_sha256:
+        raise ValueError(f"task asset hash mismatch for {record.task_id}")
+    return TaskAsset(
+        task_id=record.task_id,
+        media_type="image/png",
+        image_sha256=record.image_sha256,
+        content=content,
+    )
+
+
+def chartqa_source_sha256(records: Iterable[ChartQARecord]) -> str:
+    """Hash a split's private references without writing answers into a manifest."""
+
+    rows = [record.model_dump(mode="json") for record in records]
+    canonical = json.dumps(
+        sorted(rows, key=lambda row: str(row["task_id"])),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(canonical.encode()).hexdigest()
 
 
 def _one_record_per_image(records: Iterable[ChartQARecord]) -> list[ChartQARecord]:
@@ -279,9 +340,9 @@ def _select_stratified(
     if len(records) < size:
         raise ValueError(f"{namespace} requires {size} unique images; found {len(records)}")
 
-    strata: dict[QuestionStratum, list[ChartQARecord]] = defaultdict(list)
+    strata: dict[tuple[QuestionForm, OperationType], list[ChartQARecord]] = defaultdict(list)
     for record in records:
-        strata[_question_stratum(record.question)].append(record)
+        strata[_question_form_and_operation(record.question)].append(record)
     for candidates in strata.values():
         candidates.sort(key=lambda record: _selection_key(seed, namespace, record.task_id))
 
@@ -298,12 +359,19 @@ def _select_stratified(
     return selected
 
 
-def _question_stratum(question: str) -> QuestionStratum:
+def _question_form_and_operation(question: str) -> tuple[QuestionForm, OperationType]:
     normalized = " ".join(question.casefold().split())
-    if normalized.startswith("how many"):
-        return "count"
     if normalized.startswith(("is ", "are ", "do ", "does ", "did ", "was ", "were ")):
-        return "boolean"
+        question_form: QuestionForm = "yes_no"
+    elif normalized.startswith("how many"):
+        question_form = "how_many"
+    elif normalized.startswith(("what ", "which ", "when ", "where ", "who ")):
+        question_form = "wh"
+    else:
+        question_form = "other"
+
+    if normalized.startswith("how many"):
+        return question_form, "counting"
     arithmetic_terms = (
         "sum",
         "difference",
@@ -317,18 +385,23 @@ def _question_stratum(question: str) -> QuestionStratum:
         "multiply",
     )
     if any(term in f" {normalized} " for term in arithmetic_terms):
-        return "arithmetic"
-    return "lookup"
+        return question_form, "arithmetic"
+    comparison_terms = ("higher", "highest", "lower", "lowest", "larger", "smaller", "more", "less")
+    if question_form == "yes_no" or any(term in normalized for term in comparison_terms):
+        return question_form, "comparison"
+    return question_form, "lookup"
 
 
 def _to_manifest_entry(record: ChartQARecord) -> ManifestEntry:
+    question_form, operation_type = _question_form_and_operation(record.question)
     return ManifestEntry(
         task_id=record.task_id,
         image_asset_id=record.image_asset_id,
         image_sha256=record.image_sha256,
         question_sha256=sha256(record.question.encode()).hexdigest(),
         source_split=record.source_split,
-        stratum=_question_stratum(record.question),
+        question_form=question_form,
+        operation_type=operation_type,
     )
 
 
@@ -346,7 +419,7 @@ def _assert_disjoint(selected: dict[ManifestName, list[ChartQARecord]]) -> None:
     records = [record for stage in selected.values() for record in stage]
     if len({record.task_id for record in records}) != len(records):
         raise ValueError("experiment manifests overlap by task")
-    if len({record.image_asset_id for record in records}) != len(records):
+    if len({record.image_sha256 for record in records}) != len(records):
         raise ValueError("experiment manifests overlap by image")
 
 
@@ -355,6 +428,7 @@ def _manifest_digest(
     name: ManifestName,
     seed: int,
     dataset_revision: str,
+    source_sha256: str,
     entries: tuple[ManifestEntry, ...],
 ) -> str:
     payload = {
@@ -364,6 +438,7 @@ def _manifest_digest(
         "name": name,
         "seed": seed,
         "dataset_revision": dataset_revision,
+        "source_sha256": source_sha256,
         "entries": [entry.model_dump(mode="json") for entry in entries],
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

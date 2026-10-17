@@ -23,12 +23,18 @@ def test_guard_detects_a_forbidden_import(tmp_path: Path) -> None:
 
     source_root = tmp_path / "memory_distillation"
     source_root.mkdir()
-    (source_root / "leak.py").write_text(
+    snippets = (
         "from memory_distillation.benchmark.final import FinalBenchmark\n",
-        encoding="utf-8",
+        "from memory_distillation.benchmark import final\n",
+        "from .benchmark.final import FinalBenchmark\n",
     )
+    expected: list[Path] = []
+    for index, snippet in enumerate(snippets):
+        path = source_root / f"leak_{index}.py"
+        path.write_text(snippet, encoding="utf-8")
+        expected.append(path)
 
-    assert _forbidden_final_imports(source_root, allowed=set()) == [source_root / "leak.py"]
+    assert _forbidden_final_imports(source_root, allowed=set()) == expected
 
 
 def _forbidden_final_imports(root: Path, *, allowed: set[Path]) -> list[Path]:
@@ -38,9 +44,7 @@ def _forbidden_final_imports(root: Path, *, allowed: set[Path]) -> list[Path]:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == (
-                "memory_distillation.benchmark.final"
-            ):
+            if isinstance(node, ast.ImportFrom) and _is_final_import_from(node):
                 offenders.append(path)
                 break
             if isinstance(node, ast.Import) and any(
@@ -49,3 +53,10 @@ def _forbidden_final_imports(root: Path, *, allowed: set[Path]) -> list[Path]:
                 offenders.append(path)
                 break
     return offenders
+
+
+def _is_final_import_from(node: ast.ImportFrom) -> bool:
+    module = node.module or ""
+    if module.endswith("benchmark.final"):
+        return True
+    return module.endswith("benchmark") and any(alias.name == "final" for alias in node.names)
