@@ -86,6 +86,22 @@ class ExecutionPolicy(BaseModel):
         return self.kappa.guidance if self.kappa is not None else ()
 
 
+class CalibrationExecutionPolicy(BaseModel):
+    """Calibration-only authority to evaluate one frozen provisional rule."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    execution: ExecutionPolicy
+    proposal_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    guidance: tuple[str, ...] = Field(min_length=1, max_length=1)
+
+    @model_validator(mode="after")
+    def prohibit_measured_policy_state(self) -> "CalibrationExecutionPolicy":
+        if self.execution.review_required or self.execution.kappa is not None:
+            raise ValueError("calibration execution cannot receive frozen measured policy state")
+        return self
+
+
 class Observation(BaseModel):
     """Deterministic public result returned to the next Student turn."""
 

@@ -187,6 +187,27 @@ def freeze_kappa(
     return session.freeze(proposal=proposal, executions=executions, privacy=privacy)
 
 
+def freeze_minimal_kappa(split: CalibrationSplit) -> KappaArtifact:
+    """Freeze an empty revision-zero policy when no proposed rule survives regression."""
+
+    payload = {
+        "manifest_hash": split.manifest_hash,
+        "revision": 0,
+        "rules": [],
+        "evidence": [],
+    }
+    digest = _hash_json(payload)
+    return KappaArtifact(
+        artifact_id=f"kappa:{digest[:16]}",
+        manifest_hash=split.manifest_hash,
+        revision=0,
+        rules=(),
+        guidance=(),
+        evidence=(),
+        content_hash=digest,
+    )
+
+
 def _freeze_kappa(
     *,
     proposal: HStarProposal,

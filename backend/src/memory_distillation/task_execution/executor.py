@@ -9,6 +9,7 @@ from memory_distillation.task_execution.models import (
     ActionProposedEvent,
     ActionReview,
     ActionReviewedEvent,
+    CalibrationExecutionPolicy,
     CropAction,
     ExecutionPolicy,
     FinalAnswerAction,
@@ -62,6 +63,51 @@ class TaskExecutor:
         """Execute one answer-free task with deterministic budgets and evidence."""
 
         policy = ExecutionPolicy.model_validate(policy.model_dump(mode="json"))
+        return self._run(
+            task=task,
+            asset=asset,
+            policy=policy,
+            seed=seed,
+            behavior_cards=behavior_cards,
+            review_required=policy.review_required,
+            review_guidance=policy.kappa_guidance,
+            kappa_hash=policy.kappa_hash,
+        )
+
+    def run_calibration(
+        self,
+        *,
+        task: TaskInput,
+        asset: TaskAsset,
+        policy: CalibrationExecutionPolicy,
+        seed: int,
+    ) -> TaskRun:
+        """Evaluate one hashed provisional rule without authorizing measured use."""
+
+        policy = CalibrationExecutionPolicy.model_validate(policy.model_dump(mode="json"))
+        return self._run(
+            task=task,
+            asset=asset,
+            policy=policy.execution,
+            seed=seed,
+            behavior_cards=(),
+            review_required=True,
+            review_guidance=policy.guidance,
+            kappa_hash=None,
+        )
+
+    def _run(
+        self,
+        *,
+        task: TaskInput,
+        asset: TaskAsset,
+        policy: ExecutionPolicy,
+        seed: int,
+        behavior_cards: tuple[str, ...],
+        review_required: bool,
+        review_guidance: tuple[str, ...],
+        kappa_hash: str | None,
+    ) -> TaskRun:
         if asset.task_id != task.task_id or asset.image_sha256 != task.image_sha256:
             raise ValueError("task asset does not match task input")
 
@@ -80,7 +126,7 @@ class TaskExecutor:
                 sequence=0,
                 task_id=task.task_id,
                 seed=seed,
-                kappa_hash=policy.kappa_hash,
+                kappa_hash=kappa_hash,
             )
         )
 
@@ -165,7 +211,7 @@ class TaskExecutor:
             )
 
             action = proposed_action
-            if policy.review_required:
+            if review_required:
                 if review_calls >= policy.max_review_calls:
                     return self._finish(
                         "reviewer_budget_exhausted",
@@ -208,7 +254,7 @@ class TaskExecutor:
                             asset=asset,
                             proposed_action=proposed_action,
                             observations=tuple(observations),
-                            guidance=policy.kappa_guidance,
+                            guidance=review_guidance,
                             turn_index=turn_index,
                         )
                     )

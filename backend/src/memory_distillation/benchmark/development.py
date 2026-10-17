@@ -47,9 +47,19 @@ class DevelopmentBenchmark:
         """Load the fixed discovery and regression calibration subsets."""
 
         return CalibrationTasks(
-            discovery=self._load_tasks("calibration_discovery"),
-            regression=self._load_tasks("calibration_regression"),
+            discovery=self.load_calibration_discovery(),
+            regression=self.load_calibration_regression(),
         )
+
+    def load_calibration_discovery(self) -> tuple[TaskInput, ...]:
+        """Load only tasks permitted to influence the H-star proposal."""
+
+        return self._load_tasks("calibration_discovery")
+
+    def load_calibration_regression(self) -> tuple[TaskInput, ...]:
+        """Load the sealed subset only after the H-star proposal is frozen."""
+
+        return self._load_tasks("calibration_regression")
 
     def load_collection(self) -> tuple[TaskInput, ...]:
         """Load tasks eligible to produce Reviewed Episodes."""

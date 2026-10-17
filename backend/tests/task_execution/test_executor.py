@@ -11,6 +11,7 @@ from memory_distillation.inference import DeterministicInference
 from memory_distillation.review_policy import KappaArtifact, KappaRule, RuleEvidence
 from memory_distillation.sandbox import DeterministicSandbox, SandboxResult
 from memory_distillation.task_execution import (
+    CalibrationExecutionPolicy,
     CropAction,
     DeterministicReviewer,
     ExecutionPolicy,
@@ -271,6 +272,46 @@ def test_review_policy_requires_frozen_kappa_identity() -> None:
 
     with pytest.raises(ValueError, match="Reviewer-free"):
         ExecutionPolicy(kappa=_kappa("Should not be visible."))
+
+
+def test_calibration_guidance_is_reviewed_without_claiming_kappa_identity() -> None:
+    task, asset = _fixture_input()
+    proposal = FinalAnswerAction(answer="41")
+    replacement = FinalAnswerAction(answer="42")
+    reviewer = DeterministicReviewer(
+        results=(
+            ReviewResult(
+                decision="replace",
+                accepted_action=replacement,
+                private_reason="Correct the invalid provisional action.",
+                model_id="fixture-reviewer-v1",
+                request_id="review-1",
+                input_tokens=10,
+                output_tokens=4,
+                latency_ms=2,
+            ),
+        )
+    )
+    run = TaskExecutor(
+        inference=DeterministicInference(actions=(proposal,), model_id="fixture-student-v1"),
+        sandbox=DeterministicSandbox(results={}),
+        verifier=FixtureVerifier(),
+        event_sink=InMemoryEventSink(),
+        reviewer=reviewer,
+    ).run_calibration(
+        task=task,
+        asset=asset,
+        policy=CalibrationExecutionPolicy(
+            execution=ExecutionPolicy(),
+            proposal_hash="a" * 64,
+            guidance=("Check exact arithmetic before answering.",),
+        ),
+        seed=17,
+    )
+
+    assert run.score is not None and run.score.correct is True
+    assert run.kappa_hash is None
+    assert reviewer.requests[0].guidance == ("Check exact arithmetic before answering.",)
 
 
 def test_review_policy_accepts_only_one_validated_kappa_artifact() -> None:

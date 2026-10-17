@@ -14,6 +14,7 @@ from memory_distillation.review_policy import (
     KappaRule,
     RuleEvidence,
     freeze_kappa,
+    freeze_minimal_kappa,
     hash_hstar_proposal,
 )
 
@@ -159,6 +160,16 @@ def test_kappa_is_deterministic_frozen_and_regression_screened() -> None:
     assert len(first.content_hash) == 64
     with pytest.raises(ValidationError):
         first.guidance = ()
+
+
+def test_minimal_kappa_records_an_explicit_revision_zero_fallback() -> None:
+    artifact = freeze_minimal_kappa(_split())
+
+    assert artifact.revision == 0
+    assert artifact.rules == ()
+    assert artifact.guidance == ()
+    assert len(artifact.content_hash) == 64
+    assert KappaArtifact.model_validate(artifact.model_dump()) == artifact
 
 
 @pytest.mark.parametrize(

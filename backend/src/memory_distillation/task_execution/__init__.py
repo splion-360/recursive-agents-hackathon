@@ -3,6 +3,7 @@
 from memory_distillation.task_execution.executor import TaskExecutor
 from memory_distillation.task_execution.models import (
     ActionReview,
+    CalibrationExecutionPolicy,
     CropAction,
     ExecutionPolicy,
     FinalAnswerAction,
@@ -21,6 +22,7 @@ from memory_distillation.task_execution.review import (
 
 __all__ = [
     "ActionReview",
+    "CalibrationExecutionPolicy",
     "CropAction",
     "DeterministicReviewer",
     "ExecutionPolicy",

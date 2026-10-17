@@ -10,6 +10,7 @@ from memory_distillation.review_policy.kappa import (
     KappaRule,
     RuleEvidence,
     freeze_kappa,
+    freeze_minimal_kappa,
     hash_hstar_proposal,
 )
 
@@ -23,5 +24,6 @@ __all__ = [
     "KappaRule",
     "RuleEvidence",
     "freeze_kappa",
+    "freeze_minimal_kappa",
     "hash_hstar_proposal",
 ]
