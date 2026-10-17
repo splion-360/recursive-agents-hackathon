@@ -4,6 +4,11 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+SandboxStatus = Literal["completed", "failed", "timed_out"]
+SandboxFailureKind = Literal[
+    "policy_denied", "command_failed", "transport_failed", "timed_out"
+]
+
 
 class SandboxRequest(BaseModel):
     """A bounded Python request with no network or host-path capability."""
@@ -21,11 +26,12 @@ class SandboxResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    status: Literal["completed", "failed", "timed_out"]
+    status: SandboxStatus
     stdout: str
     stderr: str
     exit_code: int | None
     latency_ms: int = Field(ge=0)
+    failure_kind: SandboxFailureKind | None = None
 
 
 class Sandbox(Protocol):
