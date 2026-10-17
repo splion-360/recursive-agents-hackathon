@@ -9,7 +9,7 @@ from types import TracebackType
 from typing import Any, Literal, Self, TypeVar
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
 
 from memory_distillation.benchmark import TaskAsset
 from memory_distillation.calibration.models import (
@@ -22,7 +22,13 @@ from memory_distillation.inference.protocol import (
 )
 from memory_distillation.review_policy import HStarProposal
 from memory_distillation.settings import Settings
-from memory_distillation.task_execution.models import StudentAction
+from memory_distillation.task_execution.models import (
+    CropAction,
+    FinalAnswerAction,
+    InspectImageAction,
+    RunPythonAction,
+    StudentAction,
+)
 from memory_distillation.task_execution.review import ReviewRequest, ReviewResult
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
@@ -52,16 +58,21 @@ class CrusoeProviderError(RuntimeError):
         failure_kind: str,
         request_id: str | None,
         retry_count: int,
+        validation_summary: tuple[str, ...] = (),
     ) -> None:
+        validation_detail = (
+            f", validation={';'.join(validation_summary)}" if validation_summary else ""
+        )
         super().__init__(
             "Crusoe inference failed "
             f"(kind={failure_kind}, status={status_code}, request_id={request_id}, "
-            f"retries={retry_count})"
+            f"retries={retry_count}{validation_detail})"
         )
         self.status_code = status_code
         self.failure_kind = failure_kind
         self.request_id = request_id
         self.retry_count = retry_count
+        self.validation_summary = validation_summary
 
 
 class CrusoePricing(BaseModel):
@@ -148,11 +159,60 @@ class _StudentOutput(BaseModel):
 
 
 class _ReviewOutput(BaseModel):
+    """Provider-compatible review shape converted into a typed Student action."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     decision: Literal["pass", "replace"]
-    accepted_action: StudentAction
+    accepted_action_type: Literal["inspect_image", "crop", "run_python", "final_answer"]
+    answer: str | None = Field(min_length=1, max_length=2_000)
+    code: str | None = Field(min_length=1, max_length=10_000)
+    x0: int | None = Field(ge=0)
+    y0: int | None = Field(ge=0)
+    x1: int | None = Field(gt=0)
+    y1: int | None = Field(gt=0)
     private_reason: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_action_payload(self) -> "_ReviewOutput":
+        required_fields = {
+            "inspect_image": frozenset(),
+            "crop": frozenset({"x0", "y0", "x1", "y1"}),
+            "run_python": frozenset({"code"}),
+            "final_answer": frozenset({"answer"}),
+        }[self.accepted_action_type]
+        payload = {
+            "answer": self.answer,
+            "code": self.code,
+            "x0": self.x0,
+            "y0": self.y0,
+            "x1": self.x1,
+            "y1": self.y1,
+        }
+        supplied_fields = {name for name, value in payload.items() if value is not None}
+        if supplied_fields != required_fields:
+            raise ValueError(
+                f"{self.accepted_action_type} requires exactly "
+                f"{sorted(required_fields)} payload fields"
+            )
+        return self
+
+    def to_action(self) -> StudentAction:
+        """Build the canonical discriminated action after strict payload validation."""
+
+        if self.accepted_action_type == "inspect_image":
+            return InspectImageAction()
+        if self.accepted_action_type == "run_python":
+            assert self.code is not None
+            return RunPythonAction(code=self.code)
+        if self.accepted_action_type == "final_answer":
+            assert self.answer is not None
+            return FinalAnswerAction(answer=self.answer)
+        assert self.x0 is not None
+        assert self.y0 is not None
+        assert self.x1 is not None
+        assert self.y1 is not None
+        return CropAction(x0=self.x0, y0=self.y0, x1=self.x1, y1=self.y1)
 
 
 class CrusoeClient:
@@ -277,6 +337,10 @@ class CrusoeClient:
         total_retries = 0
         structured_retries = 0
         while True:
+            # A schema-invalid completion is a completed, billed inference. Vary
+            # only its retry seed deterministically; transport retries retain the
+            # current seed because the provider explicitly rejected submission.
+            payload["seed"] = seed + structured_retries
             self._admit(model=model, payload=payload, max_output_tokens=max_output_tokens)
             response, transport_retries = self._post_with_retries(payload)
             total_retries += transport_retries
@@ -318,17 +382,23 @@ class CrusoeClient:
             choice = completion.choices[0]
             content = choice.message.content
             failure_kind: str | None = None
+            validation_summary: tuple[str, ...] = ()
             output: OutputT | None = None
             if content is None:
                 failure_kind = "missing_structured_output"
             else:
                 try:
                     output = output_type.model_validate_json(content)
-                except ValueError:
+                except ValidationError as error:
                     failure_kind = (
                         "output_truncated"
                         if choice.finish_reason == "length"
                         else "invalid_structured_output"
+                    )
+                    validation_summary = tuple(
+                        f"{'.'.join(str(part) for part in issue['loc']) or '<root>'}:"
+                        f"{issue['type']}"
+                        for issue in error.errors(include_input=False, include_url=False)[:5]
                     )
 
             if output is not None:
@@ -355,6 +425,7 @@ class CrusoeClient:
                 failure_kind=failure_kind or "invalid_structured_output",
                 request_id=completion.id,
                 retry_count=total_retries,
+                validation_summary=validation_summary,
             )
 
     def _admit(
@@ -410,12 +481,23 @@ class CrusoeClient:
             if response.status_code < 400:
                 return response, retry_count
             request_id = response.headers.get("x-request-id")
-            # Only an explicit rate-limit rejection is known not to have executed
-            # inference. Gateway failures are ambiguous and must not be replayed.
-            if response.status_code == 429 and retry_count < self._max_retries:
-                self._backoff(retry_count)
-                retry_count += 1
-                continue
+            # Crusoe documents 429 and 503 as transient rejections that are safe
+            # to retry. Other gateway failures remain submission-ambiguous.
+            if response.status_code in {429, 503}:
+                if retry_count < self._max_retries:
+                    self._backoff(retry_count)
+                    retry_count += 1
+                    continue
+                raise CrusoeProviderError(
+                    status_code=response.status_code,
+                    failure_kind=(
+                        "rate_limited"
+                        if response.status_code == 429
+                        else "provider_unavailable"
+                    ),
+                    request_id=request_id,
+                    retry_count=retry_count,
+                )
             failure_kind = "provider_rejected"
             if response.status_code >= 500:
                 self._submission_uncertain = True
@@ -540,7 +622,12 @@ class CrusoeReviewer:
                     "role": "system",
                     "content": (
                         "Privately review one proposed ChartQA action. PASS it unchanged when "
-                        "valid; otherwise REPLACE it with the smallest valid action."
+                        "valid; otherwise REPLACE it with the smallest valid action. Return only "
+                        "the requested flat structured JSON with a brief non-empty "
+                        "private_reason. Set accepted_action_type and populate only the fields "
+                        "needed by that action: answer for final_answer, code for run_python, "
+                        "x0/y0/x1/y1 for crop, or none for inspect_image. Set every unused "
+                        "action payload field to null."
                     ),
                 },
                 {
@@ -558,13 +645,12 @@ class CrusoeReviewer:
             max_output_tokens=self._max_output_tokens,
             seed=request.turn_index,
         )
-        if result.output.decision == "pass" and (
-            result.output.accepted_action != request.proposed_action
-        ):
+        accepted_action = result.output.to_action()
+        if result.output.decision == "pass" and accepted_action != request.proposed_action:
             raise ValueError("Crusoe Reviewer changed an action while claiming PASS")
         return ReviewResult(
             decision=result.output.decision,
-            accepted_action=result.output.accepted_action,
+            accepted_action=accepted_action,
             private_reason=result.output.private_reason,
             model_id=result.model_id,
             request_id=result.request_id,

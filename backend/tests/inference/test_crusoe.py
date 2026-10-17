@@ -190,12 +190,14 @@ def test_retryable_provider_rejection_is_bounded_and_observable() -> None:
 
 def test_invalid_structured_output_is_retried_and_fully_accounted() -> None:
     attempts = 0
+    seeds: list[int] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         if request.url.path.endswith("/models"):
             return _catalog_response()
         attempts += 1
+        seeds.append(json.loads(request.content)["seed"])
         if attempts == 1:
             return _completion_response(content='{"status":')
         return _completion_response()
@@ -217,6 +219,7 @@ def test_invalid_structured_output_is_retried_and_fully_accounted() -> None:
         )
 
     assert attempts == 2
+    assert seeds == [17, 18]
     assert result.output == FixtureOutput(status="ok")
     assert result.retry_count == 1
     assert result.input_tokens == 40
@@ -258,6 +261,7 @@ def test_invalid_structured_output_retries_are_bounded() -> None:
     assert attempts == 2
     assert captured.value.failure_kind == "invalid_structured_output"
     assert captured.value.retry_count == 1
+    assert captured.value.validation_summary == ("<root>:json_invalid",)
     assert client.spent_tokens == 50
 
 
@@ -352,7 +356,7 @@ def test_uncertain_submission_prevents_further_requests() -> None:
     assert attempts == 1
 
 
-def test_ambiguous_gateway_failure_seals_the_client() -> None:
+def test_transient_provider_unavailable_is_retried() -> None:
     attempts = 0
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -360,7 +364,9 @@ def test_ambiguous_gateway_failure_seals_the_client() -> None:
         if request.url.path.endswith("/models"):
             return _catalog_response()
         attempts += 1
-        return httpx2.Response(503, json={"errors": ["gateway unavailable"]})
+        if attempts == 1:
+            return httpx2.Response(503, json={"errors": ["shared capacity unavailable"]})
+        return _completion_response()
 
     with CrusoeClient(
         base_url="https://inference.example.test/v1",
@@ -368,26 +374,18 @@ def test_ambiguous_gateway_failure_seals_the_client() -> None:
         budget=CrusoeBudget(max_cost_usd=Decimal("0.01"), max_total_tokens=1000),
         transport=httpx2.MockTransport(handler),
         max_retries=1,
+        retry_backoff_seconds=0,
     ) as client:
-        with pytest.raises(CrusoeProviderError) as captured:
-            client.complete_json(
-                model_id="fixture/model",
-                messages=({"role": "user", "content": "Return ok."},),
-                output_type=FixtureOutput,
-                max_output_tokens=16,
-                seed=17,
-            )
-        assert captured.value.failure_kind == "uncertain"
-        with pytest.raises(CrusoeAdmissionError, match="uncertain submission"):
-            client.complete_json(
-                model_id="fixture/model",
-                messages=({"role": "user", "content": "Return ok."},),
-                output_type=FixtureOutput,
-                max_output_tokens=16,
-                seed=17,
-            )
+        result = client.complete_json(
+            model_id="fixture/model",
+            messages=({"role": "user", "content": "Return ok."},),
+            output_type=FixtureOutput,
+            max_output_tokens=16,
+            seed=17,
+        )
 
-    assert attempts == 1
+    assert attempts == 2
+    assert result.retry_count == 1
 
 
 def test_student_serializes_one_image_and_returns_a_typed_action() -> None:
@@ -453,7 +451,8 @@ def test_reviewer_uses_kappa_and_returns_a_typed_replacement() -> None:
         submitted.update(json.loads(request.content))
         return _completion_response(
             content=(
-                '{"decision":"replace","accepted_action":{"type":"inspect_image"},'
+                '{"decision":"replace","accepted_action_type":"inspect_image",'
+                '"answer":null,"code":null,"x0":null,"y0":null,"x1":null,"y1":null,'
                 '"private_reason":"Need chart evidence first."}'
             ),
             model_id="nvidia/fixture-nemotron-vl",
