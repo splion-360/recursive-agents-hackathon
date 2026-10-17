@@ -1,19 +1,27 @@
-"""Minimal HTTP entry point for the project scaffold."""
+"""HTTP composition root for the experiment runner and read-only dashboard."""
 
+import asyncio
+import json
+from collections.abc import AsyncIterator
 from typing import Literal
 
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from memory_distillation.operational_memory import MemMachineOperationalMemory
 from memory_distillation.sandbox import OpenShellSandbox
 from memory_distillation.settings import Settings, get_settings
 from memory_distillation.visualizer import (
+    CALIBRATION_EVENTS_PATH,
+    DashboardSnapshot,
     MetricEvidence,
     PromotionEvidence,
     ReplayEvidence,
     RunEvidence,
     VersionEvidence,
+    load_dashboard_snapshot,
+    parse_run_event,
     synthetic_evidence,
 )
 
@@ -59,6 +67,37 @@ def health() -> HealthResponse:
     """Confirm that the backend process is ready to receive requests."""
 
     return HealthResponse(status="ok", application="memory-distillation")
+
+
+@app.get("/api/dashboard", response_model=DashboardSnapshot)
+def dashboard() -> DashboardSnapshot:
+    """Return current local experiment state without synthetic measurements."""
+
+    return load_dashboard_snapshot(app.state.settings)
+
+
+@app.get("/api/dashboard/events")
+async def dashboard_events() -> StreamingResponse:
+    """Stream validated public RunEvents appended by the shell-driven runner."""
+
+    async def stream() -> AsyncIterator[str]:
+        offset = 0
+        while True:
+            if CALIBRATION_EVENTS_PATH.exists():
+                with CALIBRATION_EVENTS_PATH.open(encoding="utf-8") as source:
+                    source.seek(offset)
+                    while line := source.readline():
+                        if not line.endswith("\n"):
+                            break
+                        offset = source.tell()
+                        event = parse_run_event(json.loads(line))
+                        payload = event.model_dump(mode="json")
+                        encoded = json.dumps(payload, separators=(",", ":"))
+                        yield f"event: run_event\ndata: {encoded}\n\n"
+            yield ": heartbeat\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @app.get("/api/evidence/runs", response_model=list[RunEvidence])

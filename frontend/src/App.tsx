@@ -1,137 +1,194 @@
 import { useEffect, useState } from "react";
 
-type RunEvidence = {
-  run_id: string; task_id: string; status: "completed" | "failed";
-  proposal: string; review_decision: "PASS" | "REPLACE";
-  accepted_action: string; tool_result: string; eligible_for_consolidation: boolean;
-};
-type VersionEvidence = {
-  version_id: string; role: "ACCEPTED" | "CANDIDATE" | "REJECTED" | "PREVIOUS";
-  card_count: number; content_hash: string;
-};
-type PromotionEvidence = {
-  decision: "PROMOTE" | "REJECT"; accepted_before: string; candidate: string;
-  accepted_after: string; capability_delta: number; negative_transfer_rate: number;
-  failed_gates: string[];
-};
-type MetricEvidence = {
-  condition: "C0" | "C1" | "C2" | "C3"; accuracy: number;
-  intervention_rate: number; mean_latency_ms: number; mean_tokens: number;
-};
-type ReplayEvidence = {
-  mode: "REPLAY"; synthetic: true; provenance: string;
-  events: Array<{ sequence: number; type: string; task_id: string }>;
-};
-type Evidence = {
-  runs: RunEvidence[]; versions: VersionEvidence[]; promotion: PromotionEvidence;
-  metrics: MetricEvidence[]; replay: ReplayEvidence;
-};
+import {
+  type DashboardSnapshot,
+  type RunEvent,
+  fetchDashboard,
+  subscribeToRunEvents,
+} from "./api";
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`Evidence API returned ${response.status}`);
-  return response.json() as Promise<T>;
-}
+type View = "overview" | "live" | "calibration" | "memory" | "health";
+
+const VIEW_LABELS: Record<View, string> = {
+  overview: "Overview",
+  live: "Live Run",
+  calibration: "Calibration",
+  memory: "Shared Brain",
+  health: "System Health",
+};
 
 export function App() {
-  const [evidence, setEvidence] = useState<Evidence | null>(null);
+  const [view, setView] = useState<View>("overview");
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetchJson<RunEvidence[]>("/api/evidence/runs"),
-      fetchJson<VersionEvidence[]>("/api/evidence/versions"),
-      fetchJson<PromotionEvidence>("/api/evidence/promotion"),
-      fetchJson<MetricEvidence[]>("/api/evidence/metrics"),
-      fetchJson<ReplayEvidence>("/api/evidence/replay"),
-    ]).then(([runs, versions, promotion, metrics, replay]) => {
-      setEvidence({ runs, versions, promotion, metrics, replay });
-    }).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : "Unable to load evidence");
-    });
+    let active = true;
+    const refresh = () => {
+      fetchDashboard()
+        .then((value) => {
+          if (!active) return;
+          setSnapshot(value);
+          setEvents((current) => mergeEvents(current, value.recent_events));
+          setError(null);
+        })
+        .catch((reason: unknown) => {
+          if (active) setError(reason instanceof Error ? reason.message : "Dashboard unavailable");
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2_000);
+    const unsubscribe = subscribeToRunEvents(
+      (event) => setEvents((current) => mergeEvents(current, [event])),
+      setConnected,
+    );
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
-  if (error !== null) return <main className="state-card">Evidence unavailable: {error}</main>;
-  if (evidence === null) return <main className="state-card">Loading evidence chain…</main>;
-  const run = evidence.runs[0];
-  if (run === undefined) return <main className="state-card">Replay contains no runs.</main>;
+  if (snapshot === null) {
+    return <main className="boot-state">{error ?? "Connecting to experiment control plane…"}</main>;
+  }
 
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Memory-distilled agent team</p>
-          <h1>One run becomes<br /><span>a better next run.</span></h1>
-          <p className="summary">Follow a Student action through private review, safe execution,
-            distilled memory, automatic promotion, and a controlled C0–C3 comparison.</p>
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand"><BrandMark /><div><strong>Distill</strong><span>Agent laboratory</span></div></div>
+        <nav>
+          {(Object.keys(VIEW_LABELS) as View[]).map((item) => (
+            <button className={view === item ? "active" : ""} key={item} onClick={() => setView(item)}>
+              <NavIcon view={item} />{VIEW_LABELS[item]}
+              {item === "live" && snapshot.calibration.state === "running" ? <i className="nav-pulse" /> : null}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <span className={`connection-dot ${connected ? "online" : ""}`} />
+          <div><b>{connected ? "Event stream connected" : "Waiting for event stream"}</b><small>LIVE · FastAPI / SSE</small></div>
         </div>
-        <div className="replay-badge"><i /> SYNTHETIC · {evidence.replay.mode}</div>
-      </header>
+      </aside>
 
-      <section className="panel trajectory">
-        <div className="section-heading"><div><span>01</span><h2>Reviewed trajectory</h2></div><code>{run.task_id}</code></div>
-        <div className="flow-grid">
-          <article className="flow-card student"><small>STUDENT PROPOSAL</small><strong>Unverified action</strong><p>{run.proposal}</p></article>
-          <div className="connector">→</div>
-          <article className="flow-card reviewer"><small>PRIVATE REVIEW BOUNDARY</small><strong>{run.review_decision}</strong><p>{run.accepted_action}</p></article>
-          <div className="connector">→</div>
-          <article className="flow-card tool"><small>ACCEPTED ACTION ONLY</small><strong>Deterministic sandbox</strong><p>{run.tool_result}</p></article>
-        </div>
-        <p className="privacy-note">Private Reviewer reasoning is intentionally absent from this replay.</p>
-      </section>
-
-      <section className="split-layout">
-        <div className="panel memory-panel">
-          <div className="section-heading"><div><span>02</span><h2>Memory lifecycle</h2></div></div>
-          <div className="memory-path">
-            <div className="memory-node"><small>PERSIST</small><b>Reviewed Episode</b><em>{run.eligible_for_consolidation ? "eligible" : "ineligible"} · immutable provenance</em></div>
-            <div className="down-arrow">↓</div>
-            <div className="memory-node accent"><small>CONSOLIDATE</small><b>Behavior Card</b><em>answer-free procedural guidance</em></div>
-          </div>
-          <div className="versions">{evidence.versions.map((version) => (
-            <div className={`version ${version.role.toLowerCase()}`} key={version.version_id}>
-              <span>{version.role}</span><b>{version.version_id}</b>
-              <small>{version.card_count} cards · {version.content_hash.slice(0, 8)}</small>
-            </div>
-          ))}</div>
-        </div>
-        <div className="panel promotion-panel">
-          <div className="section-heading"><div><span>03</span><h2>Promotion gate</h2></div></div>
-          <div className={`decision ${evidence.promotion.decision.toLowerCase()}`}>{evidence.promotion.decision}</div>
-          <dl>
-            <div><dt>Capability Δ</dt><dd>{formatSignedPoints(evidence.promotion.capability_delta)}</dd></div>
-            <div><dt>Negative transfer</dt><dd>{(evidence.promotion.negative_transfer_rate * 100).toFixed(0)}%</dd></div>
-            <div><dt>Accepted pointer</dt><dd>{evidence.promotion.accepted_after}</dd></div>
-          </dl>
-          <p className="gate-note">
-            {evidence.promotion.decision === "PROMOTE"
-              ? "All deterministic quality, safety, and efficiency gates passed."
-              : `Rejected by: ${evidence.promotion.failed_gates.join(", ")}. Accepted Version unchanged.`}
-          </p>
-        </div>
-      </section>
-
-      <section className="panel metrics-panel">
-        <div className="section-heading"><div><span>04</span><h2>Controlled experiment</h2></div><small>Illustrative fixture values — not measured results</small></div>
-        <div className="metric-grid">{evidence.metrics.map((metric) => (
-          <article className={`metric-card ${metric.condition === "C2" ? "featured" : ""}`} key={metric.condition}>
-            <div><b>{metric.condition}</b><span>{conditionLabel(metric.condition)}</span></div>
-            <strong>{(metric.accuracy * 100).toFixed(0)}<sup>%</sup></strong>
-            <div className="bar"><i style={{ width: `${metric.accuracy * 100}%` }} /></div>
-            <small>{(metric.intervention_rate * 100).toFixed(0)}% interventions · {metric.mean_tokens} tokens</small>
-          </article>
-        ))}</div>
-      </section>
-      <footer><span>REPLAY PROVENANCE</span>{evidence.replay.provenance}</footer>
-    </main>
+      <main className="workspace">
+        <header className="topbar">
+          <div><p>MEMORY-DISTILLED AGENT TEAM</p><h1>{VIEW_LABELS[view]}</h1></div>
+          <div className="top-actions"><span className="mode-pill"><i /> LIVE</span><span className="run-id">{snapshot.calibration.run_id ?? "NO ACTIVE RUN"}</span></div>
+        </header>
+        {error ? <div className="error-banner">Refresh warning: {error}</div> : null}
+        {view === "overview" ? <Overview snapshot={snapshot} events={events} onNavigate={setView} /> : null}
+        {view === "live" ? <LiveRun snapshot={snapshot} events={events} connected={connected} /> : null}
+        {view === "calibration" ? <Calibration snapshot={snapshot} events={events} /> : null}
+        {view === "memory" ? <SharedBrain snapshot={snapshot} /> : null}
+        {view === "health" ? <SystemHealth snapshot={snapshot} /> : null}
+      </main>
+    </div>
   );
 }
 
-function conditionLabel(condition: MetricEvidence["condition"]): string {
-  return { C0: "Student only", C1: "+ Reviewer", C2: "+ Shared Brain", C3: "+ Irrelevant memory" }[condition];
+function Overview({ snapshot, events, onNavigate }: { snapshot: DashboardSnapshot; events: RunEvent[]; onNavigate: (view: View) => void }) {
+  const status = snapshot.calibration;
+  const completed = status.discovery_completed + status.regression_completed;
+  const progress = Math.round((completed / 16) * 100);
+  return <div className="page-stack">
+    <section className="hero-card">
+      <div className="hero-copy"><span className="kicker">VERSION N → N+1</span><h2>Watch experience become<br/><em>operational memory.</em></h2><p>One evidence chain from ChartQA trajectories through private review, frozen κ guidance, and deterministic promotion.</p><button onClick={() => onNavigate("live")}>{status.state === "running" ? "Watch current forward pass" : "Open live monitor"}<span>→</span></button></div>
+      <div className="orb-wrap"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="brain-orb"><span>κ</span><small>{status.kappa_hash ? "FROZEN" : "CALIBRATING"}</small></div></div>
+    </section>
+    <section className="stat-row">
+      <Stat label="Calibration progress" value={`${completed}/16`} hint={`${progress}% · ${pretty(status.stage)}`} tone="mint" />
+      <Stat label="Public run events" value={String(snapshot.event_count)} hint={events.length ? pretty(events.at(-1)?.type ?? "waiting") : "Waiting for shell runner"} tone="violet" />
+      <Stat label="Accepted memory" value={snapshot.accepted_version} hint={`${snapshot.accepted_card_count} cards · baseline`} tone="amber" />
+      <Stat label="Measured results" value="Pending" hint="No synthetic claims" tone="slate" />
+    </section>
+    <section className="panel pipeline-panel">
+      <PanelTitle eyebrow="FORWARD PASS" title="Evidence pipeline" detail="Every step is provider-backed or explicitly pending" />
+      <div className="pipeline">
+        <PipelineStep number="01" title="Student" label={shortModel(snapshot.models.student)} state={stageReached(status.stage, "discovery")} />
+        <PipelineArrow />
+        <PipelineStep number="02" title="Private Reviewer" label={shortModel(snapshot.models.reviewer)} state={stageReached(status.stage, "regression")} />
+        <PipelineArrow />
+        <PipelineStep number="03" title="OpenShell" label="Bounded execution" state={events.some((event) => event.type === "observation")} />
+        <PipelineArrow />
+        <PipelineStep number="04" title="Shared Brain" label="MemMachine · v000" state={false} />
+      </div>
+    </section>
+    <section className="two-column">
+      <ProgressCard snapshot={snapshot} />
+      <RecentEvents events={events.slice(-5).reverse()} onNavigate={() => onNavigate("live")} />
+    </section>
+  </div>;
 }
 
-function formatSignedPoints(value: number): string {
-  const points = value * 100;
-  return `${points >= 0 ? "+" : ""}${points.toFixed(0)} pp`;
+function LiveRun({ snapshot, events, connected }: { snapshot: DashboardSnapshot; events: RunEvent[]; connected: boolean }) {
+  const currentTask = snapshot.calibration.current_task_id;
+  return <div className="page-stack">
+    <section className="live-banner panel"><div><span className={`live-signal ${connected ? "on" : ""}`} /><div><b>{snapshot.calibration.state === "running" ? "Forward pass in progress" : "Live monitor ready"}</b><small>{currentTask ?? "Start Ticket 14 in the shell; events will appear automatically."}</small></div></div><Metric label="Stage" value={pretty(snapshot.calibration.stage)} /><Metric label="Events" value={String(snapshot.event_count)} /><Metric label="Elapsed" value={formatDuration(snapshot.calibration.elapsed_ms)} /></section>
+    <section className="panel trace-panel"><PanelTitle eyebrow="PUBLIC RUN EVENT STREAM" title="Typed trajectory" detail="Private Reviewer reasoning and answer labels never cross this boundary" />
+      {events.length === 0 ? <EmptyState title="No forward pass yet" body="The SSE connection is ready. Run the calibration command in your shell to populate this trace." /> : <div className="timeline">{events.slice(-30).map((event, index) => <EventRow event={event} key={`${event.task_id}-${event.sequence}-${index}`} />)}</div>}
+    </section>
+  </div>;
 }
+
+function Calibration({ snapshot, events }: { snapshot: DashboardSnapshot; events: RunEvent[] }) {
+  const c = snapshot.calibration;
+  const decisions = events.filter((event) => event.type === "action_reviewed");
+  const replacements = decisions.filter((event) => event.review?.decision === "replace").length;
+  return <div className="page-stack">
+    <section className="calibration-head"><div><span className="kicker">H-STAR → κ</span><h2>Calibration laboratory</h2><p>Discovery can shape one bounded proposal. Regression may only accept or reject it.</p></div><div className={`state-stamp ${c.state}`}>{pretty(c.state)}<small>{pretty(c.stage)}</small></div></section>
+    <section className="split-progress">
+      <PhaseCard index="A" title="Discovery" count={c.discovery_completed} total={8} detail="Visible to H-star analysis" locked={false} />
+      <div className="isolation-line"><span>ISOLATION BOUNDARY</span></div>
+      <PhaseCard index="B" title="Regression" count={c.regression_completed} total={8} detail="Hidden until proposal freezes" locked={c.stage === "waiting" || c.stage === "discovery"} />
+    </section>
+    <section className="two-column calibration-grid">
+      <div className="panel proposal-card"><PanelTitle eyebrow="ONE BOUNDED REVISION" title="H-star proposal" detail={shortModel(snapshot.models.hstar)} />
+        {c.proposal_hash ? <><CodeLine label="Proposal" value={c.proposal_id ?? "revision-1"} /><CodeLine label="SHA-256" value={c.proposal_hash} /><RuleList accepted={c.accepted_rule_ids} rejected={c.rejected_rule_ids} /></> : <EmptyState title="Proposal not generated" body="It will appear after all eight discovery trajectories are classified." />}
+      </div>
+      <div className="panel proposal-card"><PanelTitle eyebrow="FROZEN REVIEW POLICY" title="κ guidance" detail={shortModel(snapshot.models.reviewer)} />
+        {c.kappa_hash ? <><CodeLine label="Artifact" value={c.kappa_artifact_id ?? "kappa.v1"} /><CodeLine label="SHA-256" value={c.kappa_hash} /><p className="success-note">Regression screen passed. Exact artifact is frozen for measured Collection.</p></> : <EmptyState title="No κ artifact yet" body="Only rules with discovery benefit, positive regression evidence, action compatibility, and privacy clearance can enter κ." />}
+      </div>
+    </section>
+    <section className="stat-row compact"><Stat label="Reviewer decisions" value={String(decisions.length)} hint="Public decisions only" tone="violet" /><Stat label="REPLACE" value={String(replacements)} hint="Smallest valid replacement" tone="amber" /><Stat label="Tokens" value={formatNumber(c.input_tokens + c.output_tokens)} hint={`${formatNumber(c.input_tokens)} in · ${formatNumber(c.output_tokens)} out`} tone="mint" /><Stat label="Estimated cost" value={`$${c.estimated_cost_usd.toFixed(4)}`} hint="Runner-reported" tone="slate" /></section>
+  </div>;
+}
+
+function SharedBrain({ snapshot }: { snapshot: DashboardSnapshot }) {
+  return <div className="page-stack"><section className="brain-hero panel"><div className="large-orb">N</div><div><span className="kicker">MEMMACHINE OPERATIONAL MEMORY</span><h2>{snapshot.accepted_version}</h2><p>The immutable baseline is active. It contains no Behavior Cards, so the Student retrieves no procedural guidance yet.</p><div className="truth-badge">0 accepted cards · no measured N+1 claim</div></div></section><section className="panel"><PanelTitle eyebrow="VERSION LIFECYCLE" title="Nothing promoted yet" detail="Candidate construction begins after Collection" /><div className="version-rail"><VersionNode role="ACCEPTED" id="accepted-v000" active/><VersionConnector/><VersionNode role="CANDIDATE" id="Pending Collection"/><VersionConnector/><VersionNode role="DECISION" id="Pending Promotion"/></div><div className="warning-box"><b>Atomic pointer limitation</b><p>Managed MemMachine storage is configured, but atomic accepted-pointer compare-and-set is unavailable. The dashboard keeps this limitation visible instead of claiming promotion readiness.</p></div></section></div>;
+}
+
+function SystemHealth({ snapshot }: { snapshot: DashboardSnapshot }) {
+  return <div className="page-stack"><section className="panel health-panel"><PanelTitle eyebrow="PREFLIGHT" title="Runtime configuration" detail="Configured does not mean live-verified in this process" /><div className="health-list">{snapshot.integrations.map((item) => <article key={item.name}><span className={`health-icon ${item.state}`}>{item.state === "configured" ? "✓" : item.state === "limited" ? "!" : "×"}</span><div><b>{item.name}</b><p>{item.detail}</p></div><em className={item.state}>{item.state}</em></article>)}</div></section><section className="two-column"><div className="panel model-panel"><PanelTitle eyebrow="LOCKED ROSTER" title="Model assignments" detail="Loaded from settings" />{Object.entries(snapshot.models).map(([role, model]) => <CodeLine key={role} label={pretty(role)} value={model ?? "Not configured"} />)}</div><div className="panel model-panel"><PanelTitle eyebrow="DATA ISOLATION" title="Frozen manifests" detail="Actual local manifest hashes" />{snapshot.manifests.map((manifest) => <CodeLine key={manifest.name} label={`${pretty(manifest.name)} · ${manifest.task_count}`} value={manifest.content_sha256} />)}</div></section></div>;
+}
+
+function ProgressCard({ snapshot }: { snapshot: DashboardSnapshot }) { const c = snapshot.calibration; return <div className="panel progress-card"><PanelTitle eyebrow="TICKET 14" title="Calibration progress" detail={c.message} /><Progress label="Discovery trajectories" value={c.discovery_completed} total={8} /><Progress label="Regression trajectories" value={c.regression_completed} total={8} /><Progress label="PASS / REPLACE smoke" value={c.smoke_completed} total={c.smoke_total || 5} /><div className="current-step"><span>NOW</span><b>{pretty(c.stage)}</b><small>{c.current_task_id ?? "Waiting for shell command"}</small></div></div>; }
+function RecentEvents({ events, onNavigate }: { events: RunEvent[]; onNavigate: () => void }) { return <div className="panel recent-card"><PanelTitle eyebrow="TRACE TAIL" title="Recent events" detail="Sanitized RunEvent projection" />{events.length ? events.map((event, index) => <MiniEvent event={event} key={`${event.task_id}-${event.sequence}-${index}`} />) : <EmptyState title="Stream is quiet" body="No calibration events have been written." />}<button className="text-button" onClick={onNavigate}>Open full trajectory →</button></div>; }
+function EventRow({ event }: { event: RunEvent }) { const decision = event.review?.decision; return <article className={`event-row ${decision ?? ""}`}><div className="event-seq">{String(event.sequence).padStart(2, "0")}</div><div className="event-glyph">{eventIcon(event.type)}</div><div className="event-body"><div><b>{pretty(event.type)}</b>{decision ? <span className={`decision ${decision}`}>{decision.toUpperCase()}</span> : null}<time>{shortTask(event.task_id)}</time></div><p>{eventDescription(event)}</p></div></article>; }
+function MiniEvent({ event }: { event: RunEvent }) { return <div className="mini-event"><span>{eventIcon(event.type)}</span><div><b>{pretty(event.type)}</b><small>{eventDescription(event)}</small></div><code>{event.sequence}</code></div>; }
+function PhaseCard({ index, title, count, total, detail, locked }: { index: string; title: string; count: number; total: number; detail: string; locked: boolean }) { const percentage = Math.round((count / total) * 100); return <article className={`phase-card ${locked ? "locked" : ""}`}><span>{index}</span><div><small>{locked ? "SEALED" : "CALIBRATION SPLIT"}</small><h3>{title}</h3><p>{detail}</p></div><strong>{count}<i>/{total}</i></strong><div className="phase-bar"><i style={{ width: `${percentage}%` }} /></div></article>; }
+function Stat({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: string }) { return <article className={`stat-card ${tone}`}><small>{label}</small><strong>{value}</strong><p>{hint}</p></article>; }
+function Metric({ label, value }: { label: string; value: string }) { return <div className="banner-metric"><small>{label}</small><b>{value}</b></div>; }
+function Progress({ label, value, total }: { label: string; value: number; total: number }) { const percentage = Math.min(100, Math.round((value / total) * 100)); return <div className="progress-item"><div><span>{label}</span><b>{value}/{total}</b></div><div><i style={{ width: `${percentage}%` }}/></div></div>; }
+function PanelTitle({ eyebrow, title, detail }: { eyebrow: string; title: string; detail: string }) { return <div className="panel-title"><div><small>{eyebrow}</small><h3>{title}</h3></div><p>{detail}</p></div>; }
+function PipelineStep({ number, title, label, state }: { number: string; title: string; label: string; state: boolean }) { return <article className={state ? "reached" : ""}><span>{number}</span><div className="step-icon">{state ? "✓" : "·"}</div><b>{title}</b><small>{label}</small></article>; }
+function PipelineArrow() { return <div className="pipeline-arrow"><i/><span>→</span></div>; }
+function CodeLine({ label, value }: { label: string; value: string }) { return <div className="code-line"><span>{label}</span><code title={value}>{value}</code></div>; }
+function RuleList({ accepted, rejected }: { accepted: string[]; rejected: string[] }) { return <div className="rules"><small>RULE SCREEN</small>{accepted.map((rule) => <span className="accepted" key={rule}>✓ {rule}</span>)}{rejected.map((rule) => <span className="rejected" key={rule}>× {rule}</span>)}</div>; }
+function VersionNode({ role, id, active = false }: { role: string; id: string; active?: boolean }) { return <div className={`version-node ${active ? "active" : ""}`}><small>{role}</small><b>{id}</b></div>; }
+function VersionConnector() { return <div className="version-connector">→</div>; }
+function EmptyState({ title, body }: { title: string; body: string }) { return <div className="empty-state"><div>◇</div><b>{title}</b><p>{body}</p></div>; }
+function BrandMark() { return <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M18 3 31 10.5v15L18 33 5 25.5v-15Z"/><path d="m11 15 7-4 7 4v7l-7 4-7-4Z"/></svg>; }
+function NavIcon({ view }: { view: View }) { const icons: Record<View, string> = { overview: "⌂", live: "⌁", calibration: "κ", memory: "◈", health: "⊕" }; return <span className="nav-icon">{icons[view]}</span>; }
+
+function mergeEvents(current: RunEvent[], incoming: RunEvent[]): RunEvent[] { const merged = [...current]; for (const event of incoming) { const serialized = JSON.stringify(event); if (!merged.some((item) => JSON.stringify(item) === serialized)) merged.push(event); } return merged.slice(-200); }
+function shortModel(model: string | null): string { return model?.split("/").at(-1) ?? "Not configured"; }
+function shortTask(task: string): string { return task.length > 35 ? `${task.slice(0, 17)}…${task.slice(-12)}` : task; }
+function pretty(value: string): string { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function formatNumber(value: number): string { return new Intl.NumberFormat("en-US").format(value); }
+function formatDuration(milliseconds: number): string { if (milliseconds < 1_000) return `${milliseconds}ms`; const seconds = Math.round(milliseconds / 1_000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
+function stageReached(current: string, target: string): boolean { const order = ["waiting", "preflight", "discovery", "hstar_proposal", "regression", "kappa_freeze", "smoke_test", "complete"]; return order.indexOf(current) >= order.indexOf(target); }
+function eventIcon(type: string): string { return ({ run_started: "▶", inference_requested: "◎", action_proposed: "◇", action_reviewed: "κ", observation: "▣", sandbox_failure: "!", run_completed: "✓" } as Record<string, string>)[type] ?? "·"; }
+function eventDescription(event: RunEvent): string { if (event.type === "run_started") return "Run opened with frozen seed and policy identity."; if (event.type === "inference_requested") return `Student inference requested for turn ${event.turn_index ?? 0}.`; if (event.type === "action_proposed") return `Student proposed ${pretty(event.action?.type ?? "action")}.`; if (event.type === "action_reviewed") return event.review?.decision === "replace" ? `Reviewer replaced ${pretty(event.review.proposed_action.type)} with ${pretty(event.review.accepted_action.type)}.` : `Reviewer passed ${pretty(event.review?.accepted_action.type ?? "action")} unchanged.`; if (event.type === "observation") return event.observation?.content ?? "Sandbox observation returned."; if (event.type === "sandbox_failure") return `OpenShell failed closed: ${pretty(event.failure_kind ?? "unknown")}.`; if (event.type === "run_completed") return `Run ${pretty(event.termination_reason ?? "completed")}.`; return pretty(event.type); }
