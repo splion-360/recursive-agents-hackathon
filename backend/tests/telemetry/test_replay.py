@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from memory_distillation.task_execution.models import RunStartedEvent
+import pytest
+
+from memory_distillation.task_execution import FinalAnswerAction
+from memory_distillation.task_execution.models import ActionProposedEvent, RunStartedEvent
 from memory_distillation.telemetry import JsonlEventSink, ReplayReader
 
 
@@ -28,3 +31,22 @@ def test_replay_ignores_crash_truncated_final_line(tmp_path: Path) -> None:
         stream.write('{"type":"broken"')
 
     assert ReplayReader().read(path, synthetic=True).events == (event,)
+
+
+def test_replay_rejects_answer_bearing_reference_content(tmp_path: Path) -> None:
+    path = tmp_path / "run.jsonl"
+    event = ActionProposedEvent(
+        sequence=0,
+        task_id="fixture",
+        action=FinalAnswerAction(answer="secret-reference-answer"),
+        model_id="student-v1",
+        request_id="request-1",
+    )
+    JsonlEventSink(path).emit(event)
+
+    with pytest.raises(ValueError, match="answer-bearing"):
+        ReplayReader().read(
+            path,
+            synthetic=True,
+            forbidden_phrases=("secret-reference-answer",),
+        )

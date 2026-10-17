@@ -1,6 +1,9 @@
 """Deterministic paired C0-C3 experiment reporting."""
 
+import hashlib
+import itertools
 import math
+import random
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -56,6 +59,7 @@ class PairedContrast(BaseModel):
     negative_transfer_rate: float
     latency_effect_ms: float
     token_effect: float
+    mcnemar_exact_p: float
 
 
 class C3Semantics(BaseModel):
@@ -64,6 +68,22 @@ class C3Semantics(BaseModel):
     status: Literal["AVAILABLE", "UNAVAILABLE", "DEGENERATE"]
     assignment_seed: int
     reason: str
+
+
+class IrrelevantDonorCard(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    card_id: str
+    trigger_terms: tuple[str, ...]
+    token_count: int = Field(gt=0)
+
+
+class C3Assignment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    card_ids: tuple[str, ...]
+    token_count: int
 
 
 class ExperimentReport(BaseModel):
@@ -78,7 +98,12 @@ class ExperimentReport(BaseModel):
 
     @model_validator(mode="after")
     def require_all_conditions(self) -> "ExperimentReport":
-        if {item.condition for item in self.policies} != {"C0", "C1", "C2", "C3"}:
+        if len(self.policies) != 4 or {item.condition for item in self.policies} != {
+            "C0",
+            "C1",
+            "C2",
+            "C3",
+        }:
             raise ValueError("report requires one policy for every C0-C3 condition")
         return self
 
@@ -105,19 +130,53 @@ def frozen_condition_policies(
         ),
         ConditionPolicy(
             condition="C2",
-            reviewer_enabled=True,
+            reviewer_enabled=False,
             memory_view="accepted",
-            execution=execution.model_copy(update={"review_required": True}),
+            execution=execution.model_copy(update={"review_required": False}),
             configuration_hash=configuration_hash,
         ),
         ConditionPolicy(
             condition="C3",
-            reviewer_enabled=True,
+            reviewer_enabled=False,
             memory_view="irrelevant",
-            execution=execution.model_copy(update={"review_required": True}),
+            execution=execution.model_copy(update={"review_required": False}),
             configuration_hash=configuration_hash,
         ),
     )
+
+
+def validate_condition_policies(policies: tuple[ConditionPolicy, ...]) -> None:
+    """Reject any condition set that changes more than Reviewer and memory access."""
+
+    expected = {
+        "C0": (False, "none"),
+        "C1": (True, "none"),
+        "C2": (False, "accepted"),
+        "C3": (False, "irrelevant"),
+    }
+    if len(policies) != 4 or {item.condition for item in policies} != set(expected):
+        raise ValueError("exactly one frozen policy is required per condition")
+    if len({item.configuration_hash for item in policies}) != 1:
+        raise ValueError("all conditions must use one frozen configuration")
+    budget_fields = (
+        "max_actions",
+        "max_tool_calls",
+        "max_python_calls",
+        "max_total_tokens",
+        "max_elapsed_ms",
+        "sandbox_timeout_ms",
+        "max_crop_coordinate",
+    )
+    baseline = policies[0].execution
+    for policy in policies:
+        if (policy.reviewer_enabled, policy.memory_view) != expected[policy.condition]:
+            raise ValueError(f"invalid frozen policy for {policy.condition}")
+        if policy.execution.review_required != policy.reviewer_enabled:
+            raise ValueError("Reviewer flag and execution policy disagree")
+        if any(
+            getattr(policy.execution, field) != getattr(baseline, field) for field in budget_fields
+        ):
+            raise ValueError("all conditions must use identical execution budgets")
 
 
 def build_experiment_report(
@@ -132,6 +191,10 @@ def build_experiment_report(
     grouped: dict[Condition, list[ConditionResult]] = {
         condition: [] for condition in ("C0", "C1", "C2", "C3")
     }
+    validate_condition_policies(policies)
+    row_keys = [(item.condition, item.task_id, item.seed) for item in results]
+    if len(set(row_keys)) != len(row_keys):
+        raise ValueError("duplicate condition result rows are forbidden")
     for result in results:
         grouped[result.condition].append(result)
     baseline_keys = {(item.task_id, item.seed) for item in grouped["C0"]}
@@ -139,7 +202,11 @@ def build_experiment_report(
         raise ValueError("C0 cannot be empty")
     for condition, items in grouped.items():
         keys = {(item.task_id, item.seed) for item in items}
-        if condition == "C3" and c3.status != "AVAILABLE" and not items:
+        if condition == "C3":
+            if not keys and c3.status in {"UNAVAILABLE", "DEGENERATE"}:
+                continue
+            if c3.status != "AVAILABLE" or not keys <= baseline_keys:
+                raise ValueError("C3 results do not match declared availability")
             continue
         if keys != baseline_keys:
             raise ValueError("conditions must use identical paired task assignments")
@@ -189,17 +256,19 @@ def _contrast(
     ]
     size = len(differences)
     mean = sum(differences) / size
-    variance = sum((value - mean) ** 2 for value in differences) / (size - 1) if size > 1 else 0
-    margin = 1.96 * math.sqrt(variance / size)
+    ci = _paired_bootstrap_interval(differences, condition)
+    baseline_wins = sum(
+        baseline[(item.task_id, item.seed)].correct and not item.correct for item in ordered
+    )
+    condition_wins = sum(
+        not baseline[(item.task_id, item.seed)].correct and item.correct for item in ordered
+    )
     return PairedContrast(
         condition=condition,
         paired_sample_size=size,
         capability_delta=mean,
-        capability_ci95=(max(-1, mean - margin), min(1, mean + margin)),
-        negative_transfer_rate=sum(
-            baseline[(item.task_id, item.seed)].correct and not item.correct for item in ordered
-        )
-        / size,
+        capability_ci95=ci,
+        negative_transfer_rate=baseline_wins / size,
         latency_effect_ms=sum(
             item.latency_ms - baseline[(item.task_id, item.seed)].latency_ms for item in ordered
         )
@@ -208,4 +277,93 @@ def _contrast(
             item.tokens - baseline[(item.task_id, item.seed)].tokens for item in ordered
         )
         / size,
+        mcnemar_exact_p=_mcnemar_exact(baseline_wins, condition_wins),
     )
+
+
+def assign_irrelevant_memory(
+    *,
+    task_terms: dict[str, tuple[str, ...]],
+    donor_cards: tuple[IrrelevantDonorCard, ...],
+    card_count: int,
+    target_token_count: int,
+    assignment_seed: int,
+) -> tuple[C3Semantics, tuple[C3Assignment, ...]]:
+    """Freeze trigger-mismatched, count- and token-matched C3 assignments."""
+
+    if card_count <= 0:
+        return (
+            C3Semantics(
+                status="DEGENERATE",
+                assignment_seed=assignment_seed,
+                reason="Accepted Version has no cards",
+            ),
+            (),
+        )
+    assignments: list[C3Assignment] = []
+    for task_id, terms in sorted(task_terms.items()):
+        normalized_terms = {term.casefold() for term in terms}
+        eligible = tuple(
+            card
+            for card in donor_cards
+            if normalized_terms.isdisjoint(term.casefold() for term in card.trigger_terms)
+        )
+        choices = []
+        for cards in itertools.combinations(eligible, card_count):
+            token_count = sum(card.token_count for card in cards)
+            if abs(token_count - target_token_count) <= target_token_count * 0.10:
+                assignment_key = (
+                    f"{assignment_seed}:{task_id}:{','.join(card.card_id for card in cards)}"
+                )
+                digest = hashlib.sha256(assignment_key.encode()).hexdigest()
+                choices.append((digest, cards, token_count))
+        if choices:
+            _, selected, token_count = min(choices, key=lambda item: item[0])
+            assignments.append(
+                C3Assignment(
+                    task_id=task_id,
+                    card_ids=tuple(card.card_id for card in selected),
+                    token_count=token_count,
+                )
+            )
+    if not assignments:
+        return (
+            C3Semantics(
+                status="UNAVAILABLE",
+                assignment_seed=assignment_seed,
+                reason="No honest trigger-mismatched donor assignment exists",
+            ),
+            (),
+        )
+    return (
+        C3Semantics(
+            status="AVAILABLE",
+            assignment_seed=assignment_seed,
+            reason=f"{len(assignments)} tasks have frozen irrelevant-memory assignments",
+        ),
+        tuple(assignments),
+    )
+
+
+def _paired_bootstrap_interval(differences: list[int], condition: Condition) -> tuple[float, float]:
+    if len(differences) == 1:
+        value = float(differences[0])
+        return value, value
+    seed_offset = {"C0": 0, "C1": 1, "C2": 2, "C3": 3}[condition]
+    generator = random.Random(20261016 + seed_offset)
+    estimates = sorted(
+        sum(generator.choice(differences) for _ in differences) / len(differences)
+        for _ in range(4_000)
+    )
+    return estimates[99], estimates[3899]
+
+
+def _mcnemar_exact(baseline_wins: int, condition_wins: int) -> float:
+    discordant = baseline_wins + condition_wins
+    if discordant == 0:
+        return 1.0
+    tail = sum(
+        math.comb(discordant, index) * 0.5**discordant
+        for index in range(min(baseline_wins, condition_wins) + 1)
+    )
+    return min(1.0, 2 * tail)

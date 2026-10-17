@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 
 from memory_distillation.operational_memory import ReviewedEpisode
 from memory_distillation.versioning.models import (
@@ -9,7 +10,9 @@ from memory_distillation.versioning.models import (
     CandidateVersion,
     CardOperation,
     EpisodeSnapshot,
+    RetrievalCalibration,
     RetrievalPolicy,
+    VersionView,
 )
 
 
@@ -18,15 +21,45 @@ def build_candidate(
     episodes: tuple[ReviewedEpisode, ...],
     operations: tuple[CardOperation, ...],
     kappa_hash: str,
-    parent_version_id: str = "accepted-v000",
+    retrieval_calibration: RetrievalCalibration,
+    contamination_phrases: tuple[str, ...],
+    parent_view: VersionView,
 ) -> CandidateVersion:
-    """Apply a validated operation batch to an empty bootstrap version and freeze it."""
+    """Apply a validated operation batch to one pinned parent view and freeze it."""
 
-    if not episodes or any(not episode.eligible_for_consolidation for episode in episodes):
-        raise ValueError("candidate requires a complete eligible episode snapshot")
-    ordered_episodes = tuple(sorted(episodes, key=lambda item: item.episode_id))
-    if len({item.episode_id for item in ordered_episodes}) != len(ordered_episodes):
-        raise ValueError("episode snapshot contains duplicate identifiers")
+    if not episodes:
+        raise ValueError("candidate requires a complete Collection pass")
+    ordered_pass = tuple(sorted(episodes, key=lambda item: item.episode_id))
+    if len({item.episode_id for item in ordered_pass}) != len(ordered_pass):
+        raise ValueError("Collection pass contains duplicate episode identifiers")
+    provenances = [item.provenance for item in ordered_pass]
+    first_provenance = provenances[0]
+    pass_identity = {
+        (
+            item.lifecycle_pass_id,
+            item.manifest_hash,
+            item.configuration_hash,
+            item.code_revision,
+            item.accepted_version_id,
+            item.accepted_content_hash,
+            item.manifest_task_ids,
+        )
+        for item in provenances
+    }
+    if len(pass_identity) != 1:
+        raise ValueError("candidate snapshot mixes Collection lifecycle provenance")
+    if (
+        first_provenance.accepted_version_id != parent_view.version_id
+        or first_provenance.accepted_content_hash != parent_view.content_hash
+    ):
+        raise ValueError("candidate parent does not match the Collection Accepted Version")
+    if {item.task.task_id for item in ordered_pass} != set(first_provenance.manifest_task_ids):
+        raise ValueError("Collection pass does not cover the complete Collection manifest")
+    if not contamination_phrases:
+        raise ValueError("candidate requires explicit contamination phrases")
+    ordered_episodes = tuple(item for item in ordered_pass if item.eligible_for_consolidation)
+    if not ordered_episodes:
+        raise ValueError("Collection pass contains no eligible consolidation evidence")
     episode_hashes = tuple(_hash_json(item.model_dump(mode="json")) for item in ordered_episodes)
     snapshot_hash = _hash_json(
         {"ids": [item.episode_id for item in ordered_episodes], "hashes": episode_hashes}
@@ -37,11 +70,18 @@ def build_candidate(
         snapshot_hash=snapshot_hash,
     )
     allowed_evidence = set(snapshot.episode_ids)
-    cards: dict[str, BehaviorCard] = {}
+    if set(retrieval_calibration.episode_ids) != allowed_evidence:
+        raise ValueError("retrieval calibration must cover the frozen Collection snapshot")
+    if len({card.card_id for card in parent_view.cards}) != len(parent_view.cards):
+        raise ValueError("parent view contains duplicate card identifiers")
+    cards = {card.card_id: card for card in parent_view.cards}
+    forbidden_phrases = _snapshot_forbidden_phrases(ordered_pass) + contamination_phrases
     for operation in operations:
+        if not operation.evidence_episode_ids:
+            raise ValueError("every card operation requires Reviewed Episode evidence")
         if not set(operation.evidence_episode_ids) <= allowed_evidence:
             raise ValueError("card operation cites evidence outside the frozen snapshot")
-        _reject_contamination(operation)
+        _reject_contamination(operation, forbidden_phrases)
         existing = cards.get(operation.card_id)
         if operation.kind == "CREATE":
             if existing is not None or operation.trigger is None or operation.instruction is None:
@@ -66,19 +106,37 @@ def build_candidate(
         elif operation.kind == "REFINE":
             if existing is None or operation.trigger is None or operation.instruction is None:
                 raise ValueError("invalid REFINE operation")
-            cards[operation.card_id] = _card_from_operation(operation)
+            replacement = _card_from_operation(operation)
+            cards[operation.card_id] = replacement.model_copy(
+                update={
+                    "evidence_episode_ids": tuple(
+                        sorted(
+                            set(existing.evidence_episode_ids)
+                            | set(replacement.evidence_episode_ids)
+                        )
+                    )
+                }
+            )
         else:
             if existing is None:
                 raise ValueError("invalid RETIRE operation")
             del cards[operation.card_id]
     frozen_cards = tuple(cards[key] for key in sorted(cards))
+    card_ids = set(cards)
+    if any(
+        not set(trial.relevant_card_ids) <= card_ids
+        or not set(trial.retrieved_card_ids) <= card_ids
+        for trial in retrieval_calibration.trials
+    ):
+        raise ValueError("retrieval calibration references cards outside the frozen candidate")
     retrieval_policy = RetrievalPolicy(
-        top_k=min(3, len(frozen_cards)),
-        minimum_score=0.25 if frozen_cards else 0,
-        token_budget=600 if frozen_cards else 0,
+        top_k=min(retrieval_calibration.top_k, len(frozen_cards)),
+        minimum_score=retrieval_calibration.minimum_score,
+        token_budget=retrieval_calibration.token_budget,
+        calibration_snapshot_hash=retrieval_calibration.evidence_hash,
     )
     content = {
-        "parent_version_id": parent_version_id,
+        "parent_version_id": parent_view.version_id,
         "kappa_hash": kappa_hash,
         "snapshot": snapshot.model_dump(mode="json"),
         "cards": [card.model_dump(mode="json") for card in frozen_cards],
@@ -88,7 +146,7 @@ def build_candidate(
     digest = _hash_json(content)
     return CandidateVersion(
         version_id=f"candidate:{digest[:16]}",
-        parent_version_id=parent_version_id,
+        parent_version_id=parent_view.version_id,
         kappa_hash=kappa_hash,
         snapshot=snapshot,
         cards=frozen_cards,
@@ -109,11 +167,45 @@ def _card_from_operation(operation: CardOperation) -> BehaviorCard:
     )
 
 
-def _reject_contamination(operation: CardOperation) -> None:
+def _reject_contamination(operation: CardOperation, forbidden_phrases: tuple[str, ...]) -> None:
     content = f"{operation.trigger or ''} {operation.instruction or ''}".casefold()
     markers = ("correct answer", "ground truth", "hidden label", "chartqa:", "task_id")
     if any(marker in content for marker in markers):
         raise ValueError("candidate batch contains answer or benchmark leakage")
+    if any(_contains_phrase(content, phrase) for phrase in forbidden_phrases):
+        raise ValueError("candidate batch contains snapshot-specific content")
+
+
+def _snapshot_forbidden_phrases(
+    episodes: tuple[ReviewedEpisode, ...],
+) -> tuple[str, ...]:
+    phrases: list[str] = []
+    for episode in episodes:
+        phrases.extend((episode.task.task_id, episode.task.question, episode.task.image_asset_id))
+        phrases.extend(action.answer for action in episode.actions if action.type == "final_answer")
+        for observation in episode.observations:
+            phrases.append(observation.content)
+            phrases.extend(_sensitive_values(observation.content))
+    return tuple(phrases)
+
+
+def _sensitive_values(content: str) -> tuple[str, ...]:
+    """Extract chart-like numeric values that must not survive consolidation."""
+
+    return tuple(
+        match.group(0)
+        for match in re.finditer(r"(?<!\w)[$+-]?\d[\d,.]*(?:%|[a-zA-Z]+)?(?!\w)", content)
+    )
+
+
+def _contains_phrase(content: str, phrase: str) -> bool:
+    normalized = " ".join(phrase.casefold().split())
+    if not normalized:
+        return False
+    normalized_content = " ".join(content.split())
+    if len(normalized) <= 3:
+        return re.search(rf"(?<!\w){re.escape(normalized)}(?!\w)", normalized_content) is not None
+    return normalized in normalized_content
 
 
 def _hash_json(value: object) -> str:

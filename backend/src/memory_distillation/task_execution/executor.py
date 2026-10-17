@@ -55,6 +55,7 @@ class TaskExecutor:
         asset: TaskAsset,
         policy: ExecutionPolicy,
         seed: int,
+        behavior_cards: tuple[str, ...] = (),
     ) -> TaskRun:
         """Execute one answer-free task with deterministic budgets and evidence."""
 
@@ -82,6 +83,7 @@ class TaskExecutor:
                         observations=tuple(item.content for item in observations),
                         seed=seed,
                         turn_index=turn_index,
+                        behavior_cards=behavior_cards,
                     )
                 )
             except Exception:
@@ -186,6 +188,7 @@ class TaskExecutor:
                     result_review = self._reviewer.review(
                         ReviewRequest(
                             task=task,
+                            asset=asset,
                             proposed_action=proposed_action,
                             observations=tuple(observations),
                             guidance=policy.kappa_guidance,
@@ -235,6 +238,11 @@ class TaskExecutor:
                     decision=result_review.decision,
                     proposed_action=proposed_action,
                     accepted_action=action,
+                    model_id=result_review.model_id,
+                    request_id=result_review.request_id,
+                    input_tokens=result_review.input_tokens,
+                    output_tokens=result_review.output_tokens,
+                    latency_ms=result_review.latency_ms,
                 )
                 reviews.append(public_review)
                 emit(
@@ -244,6 +252,43 @@ class TaskExecutor:
                         review=public_review,
                     )
                 )
+                input_tokens += result_review.input_tokens
+                output_tokens += result_review.output_tokens
+                elapsed_ms += result_review.latency_ms
+                if input_tokens + output_tokens > policy.max_total_tokens:
+                    return self._finish(
+                        "token_budget_exhausted",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
+                        reviews,
+                        review_calls,
+                    )
+                if elapsed_ms > policy.max_elapsed_ms:
+                    return self._finish(
+                        "time_budget_exhausted",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
+                        reviews,
+                        review_calls,
+                    )
 
             actions.append(action)
 

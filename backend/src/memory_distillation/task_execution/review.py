@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from memory_distillation.benchmark import TaskInput
+from memory_distillation.benchmark import TaskAsset, TaskInput
 from memory_distillation.task_execution.models import Observation, StudentAction
 
 
@@ -12,6 +12,7 @@ class ReviewRequest:
     """Private review input for one proposed Student action."""
 
     task: TaskInput
+    asset: TaskAsset
     proposed_action: StudentAction
     observations: tuple[Observation, ...]
     guidance: tuple[str, ...]
@@ -25,6 +26,11 @@ class ReviewResult:
     decision: Literal["pass", "replace"]
     accepted_action: StudentAction
     private_reason: str
+    model_id: str
+    request_id: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
 
 
 class Reviewer(Protocol):

@@ -4,6 +4,19 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from memory_distillation.task_execution.models import (
+    ActionProposedEvent,
+    ActionReview,
+    ActionReviewedEvent,
+    FinalAnswerAction,
+    Observation,
+    ObservationEvent,
+    RunCompletedEvent,
+    RunEvent,
+    RunPythonAction,
+    RunStartedEvent,
+)
+
 
 class RunEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -49,22 +62,13 @@ class MetricEvidence(BaseModel):
     mean_tokens: float
 
 
-class ReplayStep(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    sequence: int
-    stage: Literal["STUDENT", "REVIEWER", "TOOL", "MEMORY", "PROMOTION"]
-    title: str
-    detail: str
-
-
 class ReplayEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     mode: Literal["REPLAY"] = "REPLAY"
     synthetic: Literal[True] = True
     provenance: str
-    steps: tuple[ReplayStep, ...]
+    events: tuple[RunEvent, ...]
 
 
 def synthetic_evidence() -> tuple[
@@ -126,35 +130,62 @@ def synthetic_evidence() -> tuple[
         MetricEvidence(
             condition="C2",
             accuracy=0.75,
-            intervention_rate=0.20,
+            intervention_rate=0,
             mean_latency_ms=1080,
             mean_tokens=475,
         ),
         MetricEvidence(
             condition="C3",
             accuracy=0.62,
-            intervention_rate=0.28,
+            intervention_rate=0,
             mean_latency_ms=1090,
             mean_tokens=480,
         ),
     )
     replay = ReplayEvidence(
         provenance="Deterministic fixture generated locally; no provider or benchmark result.",
-        steps=(
-            ReplayStep(sequence=1, stage="STUDENT", title="Action proposed", detail=run.proposal),
-            ReplayStep(sequence=2, stage="REVIEWER", title="REPLACE", detail=run.accepted_action),
-            ReplayStep(sequence=3, stage="TOOL", title="Sandbox result", detail=run.tool_result),
-            ReplayStep(
-                sequence=4,
-                stage="MEMORY",
-                title="Reviewed Episode",
-                detail="Eligible episode consolidated into one answer-free Behavior Card.",
+        events=(
+            RunStartedEvent(sequence=0, task_id=run.task_id, seed=17),
+            ActionProposedEvent(
+                sequence=1,
+                task_id=run.task_id,
+                action=RunPythonAction(code="print(sum(extracted_values))"),
+                model_id="synthetic-student-v1",
+                request_id="synthetic:student:1",
             ),
-            ReplayStep(
+            ActionReviewedEvent(
+                sequence=2,
+                task_id=run.task_id,
+                review=ActionReview(
+                    decision="replace",
+                    proposed_action=RunPythonAction(code="print(sum(extracted_values))"),
+                    accepted_action=RunPythonAction(code="print(sum(verified_values))"),
+                    model_id="synthetic-reviewer-v1",
+                    request_id="synthetic:reviewer:1",
+                    input_tokens=40,
+                    output_tokens=12,
+                    latency_ms=120,
+                ),
+            ),
+            ObservationEvent(
+                sequence=3,
+                task_id=run.task_id,
+                observation=Observation(
+                    action_type="run_python", content="validated aggregate produced"
+                ),
+            ),
+            ActionProposedEvent(
+                sequence=4,
+                task_id=run.task_id,
+                action=FinalAnswerAction(answer="synthetic prediction"),
+                model_id="synthetic-student-v1",
+                request_id="synthetic:student:2",
+            ),
+            RunCompletedEvent(
                 sequence=5,
-                stage="PROMOTION",
-                title="Candidate promoted",
-                detail="All deterministic gates passed; Accepted Version advanced atomically.",
+                task_id=run.task_id,
+                termination_reason="completed",
+                correct=True,
             ),
         ),
     )

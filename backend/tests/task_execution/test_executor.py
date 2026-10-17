@@ -98,11 +98,21 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
                 decision="replace",
                 accepted_action=accepted,
                 private_reason="hidden reviewer chain of thought",
+                model_id="fixture-reviewer-v1",
+                request_id="review:1",
+                input_tokens=7,
+                output_tokens=2,
+                latency_ms=3,
             ),
             ReviewResult(
                 decision="pass",
                 accepted_action=FinalAnswerAction(answer="42"),
                 private_reason="hidden final rationale",
+                model_id="fixture-reviewer-v1",
+                request_id="review:2",
+                input_tokens=7,
+                output_tokens=2,
+                latency_ms=3,
             ),
         )
     )
@@ -134,6 +144,10 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
     assert sandbox.requests[0].code == accepted.code
     assert inference.requests[1].observations == ("42\n",)
     assert reviewer.requests[0].guidance == ("Prefer exact arithmetic.",)
+    assert reviewer.requests[0].asset == asset
+    assert run.input_tokens == 34
+    assert run.output_tokens == 10
+    assert run.elapsed_ms == 17
     assert "hidden" not in run.model_dump_json()
 
 

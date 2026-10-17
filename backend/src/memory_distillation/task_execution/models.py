@@ -112,6 +112,11 @@ class ActionReview(BaseModel):
     decision: Literal["pass", "replace"]
     proposed_action: StudentAction
     accepted_action: StudentAction
+    model_id: str
+    request_id: str
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    latency_ms: int = Field(ge=0)
 
 
 class ActionReviewedEvent(BaseModel):

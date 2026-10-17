@@ -26,7 +26,18 @@ def test_episode_write_is_idempotent_and_failed_runs_are_ineligible() -> None:
         termination_reason="completed",
         actions=(action,),
         observations=(),
-        reviews=(ActionReview(decision="pass", proposed_action=action, accepted_action=action),),
+        reviews=(
+            ActionReview(
+                decision="pass",
+                proposed_action=action,
+                accepted_action=action,
+                model_id="reviewer-v1",
+                request_id="review:1",
+                input_tokens=1,
+                output_tokens=1,
+                latency_ms=1,
+            ),
+        ),
         events=(),
         score=Score(correct=True, method="text_exact"),
         input_tokens=10,
@@ -37,7 +48,14 @@ def test_episode_write_is_idempotent_and_failed_runs_are_ineligible() -> None:
         review_calls=1,
     )
     provenance = EpisodeProvenance(
-        code_revision="abc123", manifest_hash="manifest", configuration_hash="config"
+        code_revision="abc123",
+        manifest_hash="manifest",
+        configuration_hash="config",
+        lifecycle_pass_id="pass-1",
+        purpose="collection",
+        manifest_task_ids=(task.task_id,),
+        accepted_version_id="accepted-v000",
+        accepted_content_hash="0" * 64,
     )
     episode = episode_from_run(task=task, run=run, provenance=provenance)
     memory = InMemoryOperationalMemory()
@@ -52,3 +70,11 @@ def test_episode_write_is_idempotent_and_failed_runs_are_ineligible() -> None:
     )
     failed_episode = episode_from_run(task=task, run=failed, provenance=provenance)
     assert failed_episode.eligible_for_consolidation is False
+
+    for purpose in ("calibration", "promotion", "final"):
+        excluded = episode_from_run(
+            task=task,
+            run=run,
+            provenance=provenance.model_copy(update={"purpose": purpose}),
+        )
+        assert excluded.eligible_for_consolidation is False

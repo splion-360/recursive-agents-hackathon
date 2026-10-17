@@ -2,7 +2,10 @@ import pytest
 
 from memory_distillation.evaluation import (
     C3Semantics,
+    ConditionPolicy,
     ConditionResult,
+    IrrelevantDonorCard,
+    assign_irrelevant_memory,
     build_experiment_report,
     frozen_condition_policies,
 )
@@ -26,7 +29,7 @@ def _result(condition: str, task_id: str, correct: bool, *, intervention: bool) 
 def test_c0_c3_report_is_paired_deterministic_and_complete() -> None:
     policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
     results = tuple(
-        _result(condition, task_id, correct=condition != "C0", intervention=condition != "C0")
+        _result(condition, task_id, correct=condition != "C0", intervention=condition == "C1")
         for condition in ("C0", "C1", "C2", "C3")
         for task_id in ("t1", "t2")
     )
@@ -44,6 +47,13 @@ def test_c0_c3_report_is_paired_deterministic_and_complete() -> None:
     assert first.contrasts[1].paired_sample_size == 2
     assert first.contrasts[1].capability_delta == 1
     assert first.contrasts[1].negative_transfer_rate == 0
+    assert first.contrasts[1].mcnemar_exact_p == 0.5
+    assert {policy.condition: policy.reviewer_enabled for policy in policies} == {
+        "C0": False,
+        "C1": True,
+        "C2": False,
+        "C3": False,
+    }
 
 
 def test_unavailable_c3_is_reported_without_fabricated_rows() -> None:
@@ -76,3 +86,83 @@ def test_unpaired_assignments_fail_closed() -> None:
             ),
             c3=C3Semantics(status="UNAVAILABLE", assignment_seed=1, reason="none"),
         )
+
+
+def test_condition_policies_reject_budget_or_configuration_drift() -> None:
+    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    drifted_budget = policies[2].model_copy(
+        update={"execution": policies[2].execution.model_copy(update={"max_actions": 100})}
+    )
+    with pytest.raises(ValueError, match="identical execution budgets"):
+        build_experiment_report(
+            manifest_hash="final",
+            policies=(*policies[:2], drifted_budget, policies[3]),
+            results=tuple(
+                _result(condition, "t1", True, intervention=condition == "C1")
+                for condition in ("C0", "C1", "C2", "C3")
+            ),
+            c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="matched"),
+        )
+    drifted_config: ConditionPolicy = policies[3].model_copy(
+        update={"configuration_hash": "different"}
+    )
+    with pytest.raises(ValueError, match="one frozen configuration"):
+        build_experiment_report(
+            manifest_hash="final",
+            policies=(*policies[:3], drifted_config),
+            results=tuple(
+                _result(condition, "t1", True, intervention=condition == "C1")
+                for condition in ("C0", "C1", "C2", "C3")
+            ),
+            c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="matched"),
+        )
+
+
+def test_duplicate_rows_fail_closed_and_partial_c3_is_honest() -> None:
+    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    rows = tuple(
+        _result(condition, task_id, True, intervention=condition == "C1")
+        for condition in ("C0", "C1", "C2")
+        for task_id in ("t1", "t2")
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        build_experiment_report(
+            manifest_hash="final",
+            policies=policies,
+            results=(*rows, rows[-1]),
+            c3=C3Semantics(status="UNAVAILABLE", assignment_seed=1, reason="none"),
+        )
+
+    report = build_experiment_report(
+        manifest_hash="final",
+        policies=policies,
+        results=(*rows, _result("C3", "t1", True, intervention=False)),
+        c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="one honest match"),
+    )
+    assert report.metrics[-1].condition == "C3"
+    assert report.metrics[-1].sample_size == 1
+
+
+def test_irrelevant_memory_assignment_is_seeded_and_trigger_mismatched() -> None:
+    donors = (
+        IrrelevantDonorCard(card_id="weather", trigger_terms=("weather",), token_count=48),
+        IrrelevantDonorCard(card_id="finance", trigger_terms=("finance",), token_count=52),
+        IrrelevantDonorCard(card_id="chart", trigger_terms=("chart",), token_count=50),
+    )
+    first = assign_irrelevant_memory(
+        task_terms={"t1": ("chart",)},
+        donor_cards=donors,
+        card_count=2,
+        target_token_count=100,
+        assignment_seed=20261016,
+    )
+    second = assign_irrelevant_memory(
+        task_terms={"t1": ("chart",)},
+        donor_cards=donors,
+        card_count=2,
+        target_token_count=100,
+        assignment_seed=20261016,
+    )
+    assert first == second
+    assert first[0].status == "AVAILABLE"
+    assert first[1][0].card_ids == ("weather", "finance")

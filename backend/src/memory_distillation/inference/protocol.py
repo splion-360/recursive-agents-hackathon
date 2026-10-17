@@ -17,6 +17,7 @@ class InferenceRequest:
     observations: tuple[str, ...]
     seed: int
     turn_index: int
+    behavior_cards: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

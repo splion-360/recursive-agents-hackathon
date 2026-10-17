@@ -20,7 +20,7 @@ type MetricEvidence = {
 };
 type ReplayEvidence = {
   mode: "REPLAY"; synthetic: true; provenance: string;
-  steps: Array<{ sequence: number; stage: string; title: string; detail: string }>;
+  events: Array<{ sequence: number; type: string; task_id: string }>;
 };
 type Evidence = {
   runs: RunEvidence[]; versions: VersionEvidence[]; promotion: PromotionEvidence;
@@ -84,7 +84,7 @@ export function App() {
         <div className="panel memory-panel">
           <div className="section-heading"><div><span>02</span><h2>Memory lifecycle</h2></div></div>
           <div className="memory-path">
-            <div className="memory-node"><small>PERSIST</small><b>Reviewed Episode</b><em>eligible · immutable provenance</em></div>
+            <div className="memory-node"><small>PERSIST</small><b>Reviewed Episode</b><em>{run.eligible_for_consolidation ? "eligible" : "ineligible"} · immutable provenance</em></div>
             <div className="down-arrow">↓</div>
             <div className="memory-node accent"><small>CONSOLIDATE</small><b>Behavior Card</b><em>answer-free procedural guidance</em></div>
           </div>
@@ -103,7 +103,11 @@ export function App() {
             <div><dt>Negative transfer</dt><dd>{(evidence.promotion.negative_transfer_rate * 100).toFixed(0)}%</dd></div>
             <div><dt>Accepted pointer</dt><dd>{evidence.promotion.accepted_after}</dd></div>
           </dl>
-          <p className="gate-note">All deterministic quality, safety, and efficiency gates passed.</p>
+          <p className="gate-note">
+            {evidence.promotion.decision === "PROMOTE"
+              ? "All deterministic quality, safety, and efficiency gates passed."
+              : `Rejected by: ${evidence.promotion.failed_gates.join(", ")}. Accepted Version unchanged.`}
+          </p>
         </div>
       </section>
 
