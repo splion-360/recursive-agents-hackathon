@@ -15,3 +15,19 @@ def test_health_reports_ready() -> None:
         "status": "ok",
         "application": "memory-distillation",
     }
+
+
+def test_read_only_evidence_endpoints_are_synthetic_and_sanitized() -> None:
+    client = TestClient(app)
+    paths = ("runs", "versions", "promotion", "metrics", "replay")
+    payloads = [client.get(f"/api/evidence/{path}") for path in paths]
+
+    assert all(response.status_code == 200 for response in payloads)
+    replay = payloads[-1].json()
+    assert replay["mode"] == "REPLAY"
+    assert replay["synthetic"] is True
+    combined = "".join(response.text for response in payloads).casefold()
+    assert "private_reason" not in combined
+    assert "api_key" not in combined
+    for method in (client.post, client.put, client.delete):
+        assert method("/api/evidence/runs").status_code == 405

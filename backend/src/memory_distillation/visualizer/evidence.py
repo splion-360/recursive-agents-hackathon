@@ -1,0 +1,155 @@
+"""Sanitized synthetic evidence used by the read-only visualizer."""
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class RunEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: str
+    task_id: str
+    status: Literal["completed", "failed"]
+    proposal: str
+    review_decision: Literal["PASS", "REPLACE"]
+    accepted_action: str
+    tool_result: str
+    eligible_for_consolidation: bool
+
+
+class VersionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version_id: str
+    role: Literal["ACCEPTED", "CANDIDATE", "REJECTED"]
+    card_count: int
+    content_hash: str
+
+
+class PromotionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision: Literal["PROMOTE", "REJECT"]
+    accepted_before: str
+    candidate: str
+    accepted_after: str
+    capability_delta: float
+    negative_transfer_rate: float
+    failed_gates: tuple[str, ...]
+
+
+class MetricEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    condition: Literal["C0", "C1", "C2", "C3"]
+    accuracy: float
+    intervention_rate: float
+    mean_latency_ms: float
+    mean_tokens: float
+
+
+class ReplayStep(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sequence: int
+    stage: Literal["STUDENT", "REVIEWER", "TOOL", "MEMORY", "PROMOTION"]
+    title: str
+    detail: str
+
+
+class ReplayEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["REPLAY"] = "REPLAY"
+    synthetic: Literal[True] = True
+    provenance: str
+    steps: tuple[ReplayStep, ...]
+
+
+def synthetic_evidence() -> tuple[
+    tuple[RunEvidence, ...],
+    tuple[VersionEvidence, ...],
+    PromotionEvidence,
+    tuple[MetricEvidence, ...],
+    ReplayEvidence,
+]:
+    """Return a coherent fixture; these values are not measured experiment claims."""
+
+    run = RunEvidence(
+        run_id="synthetic-run-001",
+        task_id="chartqa:synthetic:001",
+        status="completed",
+        proposal="Run Python over the extracted values without rechecking labels.",
+        review_decision="REPLACE",
+        accepted_action="Inspect the chart crop, then calculate the aggregate in OpenShell.",
+        tool_result="OpenShell completed with a validated aggregate.",
+        eligible_for_consolidation=True,
+    )
+    versions = (
+        VersionEvidence(
+            version_id="accepted-v000", role="ACCEPTED", card_count=0, content_hash="0" * 16
+        ),
+        VersionEvidence(
+            version_id="candidate-demo-001",
+            role="CANDIDATE",
+            card_count=1,
+            content_hash="8f41d2e7c6a905bd",
+        ),
+    )
+    promotion = PromotionEvidence(
+        decision="PROMOTE",
+        accepted_before="accepted-v000",
+        candidate="candidate-demo-001",
+        accepted_after="candidate-demo-001",
+        capability_delta=0.10,
+        negative_transfer_rate=0,
+        failed_gates=(),
+    )
+    metrics = (
+        MetricEvidence(
+            condition="C0", accuracy=0.60, intervention_rate=0, mean_latency_ms=900, mean_tokens=420
+        ),
+        MetricEvidence(
+            condition="C1",
+            accuracy=0.65,
+            intervention_rate=0.30,
+            mean_latency_ms=1120,
+            mean_tokens=510,
+        ),
+        MetricEvidence(
+            condition="C2",
+            accuracy=0.75,
+            intervention_rate=0.20,
+            mean_latency_ms=1080,
+            mean_tokens=475,
+        ),
+        MetricEvidence(
+            condition="C3",
+            accuracy=0.62,
+            intervention_rate=0.28,
+            mean_latency_ms=1090,
+            mean_tokens=480,
+        ),
+    )
+    replay = ReplayEvidence(
+        provenance="Deterministic fixture generated locally; no provider or benchmark result.",
+        steps=(
+            ReplayStep(sequence=1, stage="STUDENT", title="Action proposed", detail=run.proposal),
+            ReplayStep(sequence=2, stage="REVIEWER", title="REPLACE", detail=run.accepted_action),
+            ReplayStep(sequence=3, stage="TOOL", title="Sandbox result", detail=run.tool_result),
+            ReplayStep(
+                sequence=4,
+                stage="MEMORY",
+                title="Reviewed Episode",
+                detail="Eligible episode consolidated into one answer-free Behavior Card.",
+            ),
+            ReplayStep(
+                sequence=5,
+                stage="PROMOTION",
+                title="Candidate promoted",
+                detail="All deterministic gates passed; Accepted Version advanced atomically.",
+            ),
+        ),
+    )
+    return (run,), versions, promotion, metrics, replay
