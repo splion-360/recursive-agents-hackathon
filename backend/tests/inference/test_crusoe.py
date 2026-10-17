@@ -188,6 +188,79 @@ def test_retryable_provider_rejection_is_bounded_and_observable() -> None:
     assert result.retry_count == 1
 
 
+def test_invalid_structured_output_is_retried_and_fully_accounted() -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        if request.url.path.endswith("/models"):
+            return _catalog_response()
+        attempts += 1
+        if attempts == 1:
+            return _completion_response(content='{"status":')
+        return _completion_response()
+
+    with CrusoeClient(
+        base_url="https://inference.example.test/v1",
+        api_key=SecretStr("fixture-secret"),
+        budget=CrusoeBudget(max_total_tokens=1000),
+        transport=httpx2.MockTransport(handler),
+        max_retries=1,
+        retry_backoff_seconds=0,
+    ) as client:
+        result = client.complete_json(
+            model_id="fixture/model",
+            messages=({"role": "user", "content": "Return ok."},),
+            output_type=FixtureOutput,
+            max_output_tokens=16,
+            seed=17,
+        )
+
+    assert attempts == 2
+    assert result.output == FixtureOutput(status="ok")
+    assert result.retry_count == 1
+    assert result.input_tokens == 40
+    assert result.output_tokens == 10
+    assert result.actual_cost_usd == Decimal("0.000030")
+    assert client.spent_tokens == 50
+    assert client.spent_cost_usd == Decimal("0.000030")
+
+
+def test_invalid_structured_output_retries_are_bounded() -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        if request.url.path.endswith("/models"):
+            return _catalog_response()
+        attempts += 1
+        return _completion_response(content='{"status":')
+
+    with (
+        CrusoeClient(
+            base_url="https://inference.example.test/v1",
+            api_key=SecretStr("fixture-secret"),
+            budget=CrusoeBudget(max_total_tokens=1000),
+            transport=httpx2.MockTransport(handler),
+            max_retries=1,
+            retry_backoff_seconds=0,
+        ) as client,
+        pytest.raises(CrusoeProviderError) as captured,
+    ):
+        client.complete_json(
+            model_id="fixture/model",
+            messages=({"role": "user", "content": "Return ok."},),
+            output_type=FixtureOutput,
+            max_output_tokens=16,
+            seed=17,
+        )
+
+    assert attempts == 2
+    assert captured.value.failure_kind == "invalid_structured_output"
+    assert captured.value.retry_count == 1
+    assert client.spent_tokens == 50
+
+
 def test_model_identity_mismatch_fails_closed_after_accounting_usage() -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/models"):

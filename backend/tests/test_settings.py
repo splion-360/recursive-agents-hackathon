@@ -46,7 +46,7 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
     assert settings.crusoe_hstar_model == "hstar-v1"
     assert settings.crusoe_max_total_tokens == 2_000_000
     assert settings.crusoe_timeout_seconds == 60
-    assert settings.crusoe_max_retries == 1
+    assert settings.crusoe_max_retries == 2
     assert settings.crusoe_student_max_output_tokens == 4_096
     assert settings.crusoe_reviewer_max_output_tokens == 4_096
     assert settings.crusoe_hstar_max_output_tokens == 8_192

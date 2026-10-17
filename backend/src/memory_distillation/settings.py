@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     crusoe_hstar_model: str | None = None
     crusoe_max_total_tokens: int = Field(default=2_000_000, gt=0)
     crusoe_timeout_seconds: float = Field(default=60, gt=0)
-    crusoe_max_retries: int = Field(default=1, ge=0, le=3)
+    crusoe_max_retries: int = Field(default=2, ge=0, le=3)
     # Structured-output providers may spend substantial tokens satisfying a
     # schema even when the resulting action is short. Use each configured
     # boundary's supported ceiling so valid JSON is not truncated mid-object.

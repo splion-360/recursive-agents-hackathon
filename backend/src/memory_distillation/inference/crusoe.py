@@ -270,67 +270,92 @@ class CrusoeClient:
         }
         if "reasoning_effort" in model.supported_parameters:
             payload["reasoning_effort"] = "low"
-        self._admit(model=model, payload=payload, max_output_tokens=max_output_tokens)
         started = monotonic()
-        response, retry_count = self._post_with_retries(payload)
-        latency_ms = round((monotonic() - started) * 1000)
-        self._remaining_tokens = _optional_int_header(response, "x-ratelimit-remaining-tokens")
-        self._remaining_output_tokens = _optional_int_header(
-            response, "x-ratelimit-remaining-output-tokens"
-        )
-        try:
-            completion = _Completion.model_validate(response.json())
-        except ValueError as error:
-            self._submission_uncertain = True
-            raise CrusoeProviderError(
-                status_code=response.status_code,
-                failure_kind="invalid_response",
-                request_id=response.headers.get("x-request-id"),
-                retry_count=retry_count,
-            ) from error
-        actual_cost = self._cost(
-            model,
-            input_tokens=completion.usage.prompt_tokens,
-            output_tokens=completion.usage.completion_tokens,
-        )
-        self._spent_cost += actual_cost
-        self._spent_tokens += completion.usage.total_tokens
-        if completion.model != model_id:
-            raise CrusoeProviderError(
-                status_code=response.status_code,
-                failure_kind="model_identity_mismatch",
-                request_id=completion.id,
-                retry_count=retry_count,
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_cost = Decimal(0)
+        total_retries = 0
+        structured_retries = 0
+        while True:
+            self._admit(model=model, payload=payload, max_output_tokens=max_output_tokens)
+            response, transport_retries = self._post_with_retries(payload)
+            total_retries += transport_retries
+            self._remaining_tokens = _optional_int_header(
+                response, "x-ratelimit-remaining-tokens"
             )
-        content = completion.choices[0].message.content
-        if content is None:
-            raise CrusoeProviderError(
-                status_code=response.status_code,
-                failure_kind="missing_structured_output",
-                request_id=completion.id,
-                retry_count=retry_count,
+            self._remaining_output_tokens = _optional_int_header(
+                response, "x-ratelimit-remaining-output-tokens"
             )
-        try:
-            output = output_type.model_validate_json(content)
-        except ValueError as error:
+            try:
+                completion = _Completion.model_validate(response.json())
+            except ValueError as error:
+                self._submission_uncertain = True
+                raise CrusoeProviderError(
+                    status_code=response.status_code,
+                    failure_kind="invalid_response",
+                    request_id=response.headers.get("x-request-id"),
+                    retry_count=total_retries,
+                ) from error
+
+            actual_cost = self._cost(
+                model,
+                input_tokens=completion.usage.prompt_tokens,
+                output_tokens=completion.usage.completion_tokens,
+            )
+            self._spent_cost += actual_cost
+            self._spent_tokens += completion.usage.total_tokens
+            total_cost += actual_cost
+            total_input_tokens += completion.usage.prompt_tokens
+            total_output_tokens += completion.usage.completion_tokens
+            if completion.model != model_id:
+                raise CrusoeProviderError(
+                    status_code=response.status_code,
+                    failure_kind="model_identity_mismatch",
+                    request_id=completion.id,
+                    retry_count=total_retries,
+                )
+
+            choice = completion.choices[0]
+            content = choice.message.content
+            failure_kind: str | None = None
+            output: OutputT | None = None
+            if content is None:
+                failure_kind = "missing_structured_output"
+            else:
+                try:
+                    output = output_type.model_validate_json(content)
+                except ValueError:
+                    failure_kind = (
+                        "output_truncated"
+                        if choice.finish_reason == "length"
+                        else "invalid_structured_output"
+                    )
+
+            if output is not None:
+                return CrusoeStructuredResult(
+                    output=output,
+                    model_id=completion.model,
+                    request_id=completion.id,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    latency_ms=round((monotonic() - started) * 1000),
+                    retry_count=total_retries,
+                    actual_cost_usd=total_cost,
+                    remaining_tokens=self._remaining_tokens,
+                    remaining_output_tokens=self._remaining_output_tokens,
+                )
+
+            if structured_retries < self._max_retries:
+                self._backoff(structured_retries)
+                structured_retries += 1
+                total_retries += 1
+                continue
             raise CrusoeProviderError(
                 status_code=response.status_code,
-                failure_kind="invalid_structured_output",
+                failure_kind=failure_kind or "invalid_structured_output",
                 request_id=completion.id,
-                retry_count=retry_count,
-            ) from error
-        return CrusoeStructuredResult(
-            output=output,
-            model_id=completion.model,
-            request_id=completion.id,
-            input_tokens=completion.usage.prompt_tokens,
-            output_tokens=completion.usage.completion_tokens,
-            latency_ms=latency_ms,
-            retry_count=retry_count,
-            actual_cost_usd=actual_cost,
-            remaining_tokens=self._remaining_tokens,
-            remaining_output_tokens=self._remaining_output_tokens,
-        )
+                retry_count=total_retries,
+            )
 
     def _admit(
         self,
