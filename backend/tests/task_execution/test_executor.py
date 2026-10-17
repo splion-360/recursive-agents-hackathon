@@ -124,6 +124,35 @@ def test_execution_budgets_fail_closed(
     assert run.events[-1].type == "run_completed"
 
 
+def test_sandbox_failure_emits_typed_evidence() -> None:
+    task, asset = _fixture_input()
+    action = RunPythonAction(code="import socket")
+    run = TaskExecutor(
+        inference=DeterministicInference(actions=(action,), model_id="fixture-student-v1"),
+        sandbox=DeterministicSandbox(
+            results={
+                action.code: SandboxResult(
+                    status="failed",
+                    stdout="",
+                    stderr="policy denied",
+                    exit_code=1,
+                    latency_ms=2,
+                    failure_kind="policy_denied",
+                )
+            }
+        ),
+        verifier=FixtureVerifier(),
+        event_sink=InMemoryEventSink(),
+    ).run(task=task, asset=asset, policy=ExecutionPolicy(), seed=17)
+
+    assert run.termination_reason == "sandbox_failed"
+    failure_event = run.events[-2]
+    assert failure_event.type == "sandbox_failure"
+    assert failure_event.failure_kind == "policy_denied"
+    assert failure_event.status == "failed"
+    assert failure_event.exit_code == 1
+
+
 def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -> None:
     task, asset = _fixture_input()
     proposed = RunPythonAction(code="print('unsafe proposal')")

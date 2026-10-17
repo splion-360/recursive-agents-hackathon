@@ -3,7 +3,8 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from memory_distillation.main import app
+from memory_distillation.main import app, create_production_sandbox
+from memory_distillation.sandbox import OpenShellSandbox
 from memory_distillation.settings import Settings, get_settings
 
 
@@ -22,8 +23,8 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
                 "CRUSOE_REVIEWER_MODEL=reviewer-v1",
                 "CRUSOE_CONSOLIDATOR_MODEL=consolidator-v1",
                 "CRUSOE_HSTAR_MODEL=hstar-v1",
-                "OPENSHELL_BASE_URL=https://sandbox.example.test",
-                "OPENSHELL_API_KEY=sandbox-secret",
+                "OPENSHELL_SANDBOX_NAME=memory-distill",
+                "OPENSHELL_GATEWAY=nemoclaw-test",
             )
         )
         + "\n"
@@ -45,8 +46,8 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
     assert settings.crusoe_max_total_tokens == 500_000
     assert settings.crusoe_timeout_seconds == 60
     assert settings.crusoe_max_retries == 1
-    assert str(settings.openshell_base_url) == "https://sandbox.example.test/"
-    assert settings.openshell_api_key == SecretStr("sandbox-secret")
+    assert settings.openshell_sandbox_name == "memory-distill"
+    assert settings.openshell_gateway == "nemoclaw-test"
     assert "crusoe-secret" not in repr(settings)
 
 
@@ -61,8 +62,8 @@ def test_empty_optional_values_use_safe_defaults(tmp_path: Path) -> None:
                 "CRUSOE_API_KEY=",
                 "CRUSOE_STUDENT_MODEL=",
                 "CRUSOE_HSTAR_MODEL=",
-                "OPENSHELL_BASE_URL=",
-                "OPENSHELL_API_KEY=",
+                "OPENSHELL_SANDBOX_NAME=",
+                "OPENSHELL_GATEWAY=",
             )
         )
         + "\n"
@@ -74,10 +75,19 @@ def test_empty_optional_values_use_safe_defaults(tmp_path: Path) -> None:
     assert settings.crusoe_api_key is None
     assert settings.crusoe_student_model is None
     assert settings.crusoe_hstar_model is None
-    assert settings.openshell_base_url is None
-    assert settings.openshell_api_key is None
+    assert settings.openshell_sandbox_name is None
+    assert settings.openshell_gateway == "nemoclaw"
 
 
 def test_application_uses_the_cached_settings_instance() -> None:
     assert get_settings() is get_settings()
     assert app.state.settings is get_settings()
+
+
+def test_production_composition_uses_configured_openshell_sandbox(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("OPENSHELL_SANDBOX_NAME=memory-distill\nOPENSHELL_GATEWAY=nemoclaw\n")
+
+    sandbox = create_production_sandbox(Settings(_env_file=env_file))  # type: ignore[call-arg]
+
+    assert isinstance(sandbox, OpenShellSandbox)
