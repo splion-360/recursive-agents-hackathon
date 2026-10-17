@@ -96,6 +96,12 @@ def synthetic_evidence() -> tuple[
             card_count=1,
             content_hash="8f41d2e7c6a905bd",
         ),
+        VersionEvidence(
+            version_id="candidate-rejected-000",
+            role="REJECTED",
+            card_count=2,
+            content_hash="3a10b8f1ec2d4470",
+        ),
     )
     promotion = PromotionEvidence(
         decision="PROMOTE",

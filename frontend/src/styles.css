@@ -38,13 +38,15 @@ h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
 .memory-node em { color: #7e938d; font-size: 11px; font-style: normal; }
 .memory-node.accent { border-color: #4cae90; }
 .down-arrow { color: #60e2b8; line-height: 24px; }
-.versions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+.versions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
 .version { padding: 14px; border: 1px solid #31443f; border-radius: 10px; }
 .version span { float: right; color: #859992; font: 9px "DM Mono", monospace; }
 .version b, .version small { display: block; }
 .version b { font-size: 12px; }
 .version small { margin-top: 8px; color: #6e837c; font-size: 8px; }
 .version.candidate { border-color: #8e713f; }
+.version.rejected { border-color: #70434a; opacity: .65; }
+.version.rejected span { color: #e58d9d; }
 .decision { display: inline-block; margin: 12px 0 22px; padding: 9px 12px; border-radius: 7px; font: 700 12px "DM Mono", monospace; }
 .decision.promote { color: #071510; background: #60e2b8; }
 dl { margin: 0; }
