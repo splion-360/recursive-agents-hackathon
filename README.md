@@ -1,189 +1,217 @@
 # Memory-Distilled Agent Team
 
-An agent system that turns reviewed ChartQA failures into versioned, answer-free Behavior Cards without updating model weights.
+Memory-Distilled Agent Team is an experimental multimodal agent system that turns
+reviewed ChartQA trajectories into versioned, answer-free operating procedures.
+The procedures live in MemMachine and can improve a fresh Student without changing
+model weights or keeping an online Reviewer in the final serving path.
 
-The central claim is **Version N+1**: a fresh Student should improve with a promoted operating procedure from MemMachine while the Reviewer is absent and memory writes are disabled.
-
-## What this project demonstrates
-
-A multimodal Student proposes typed actions. A privileged Reviewer passes each proposal unchanged or replaces it with the smallest valid correction before execution.
-
-Completed reviewed trajectories become Reviewed Episodes. A Consolidator converts repeated evidence into an immutable Candidate Version, which becomes retrievable only after a deterministic promotion gate.
-
-The design makes improvement external, inspectable, reversible, and measurable. A valid negative result remains part of the experiment rather than a reason to retune the held-out evaluation.
-
-## Lifecycle architecture
+The project tests one central claim: can a reviewed agent team produce a measurable
+**Version N+1** by distilling corrections into external procedural memory?
 
 ![Memory distillation lifecycle](docs/assets/memory-distillation-lifecycle-generated.png)
 
-The lifecycle has five controlled phases:
+## Current status
 
-1. **Calibrate:** derive one bounded H-star proposal and adapt accepted components into frozen Kappa Guidance.
-2. **Collect:** review Student actions on the fixed Collection Set and persist eligible Reviewed Episodes.
-3. **Consolidate:** produce CREATE, REINFORCE, REFINE, and RETIRE operations over one frozen episode snapshot.
-4. **Promote:** compare the Candidate and Accepted Versions on identical Promotion tasks and budgets.
-5. **Evaluate:** run the frozen C0–C3 experiment once on the untouched Final Held-Out Set.
+The repository currently supports:
 
-Calibration, Collection, Promotion, and Final evaluation use disjoint ChartQA manifests. Candidate memory never becomes active during the lifecycle pass that created it.
+- Frozen and disjoint ChartQA manifests for calibration, collection, promotion,
+  and final evaluation.
+- A typed Student action loop with deterministic scoring and sanitized telemetry.
+- Crusoe-hosted Student, Reviewer, and H-star adapters, plus a live Consolidator
+  capability probe.
+- NemoClaw/OpenShell execution for Student-generated Python.
+- Managed MemMachine storage with immutable version and promotion contracts.
+- Offline evaluation and promotion logic with deterministic tests.
+- A live React dashboard for calibration progress and task-level outcomes.
+- A paid Stage 0 command that proposes, regression-screens, freezes, and smoke-tests
+  Kappa Reviewer guidance.
 
-## System design
+Stage 0 calibration is the active live workflow. The full live
+collection-to-consolidation-to-promotion command and final measured C0-C3 results
+are not complete yet. The repository does not claim a positive benchmark result.
 
-![Memory distillation system design](docs/assets/memory-distillation-system-design.svg)
+## How it works
 
-The backend is a modular FastAPI application. Provider-specific behavior stays behind typed inference, sandbox, benchmark, telemetry, and Operational Memory adapters.
+1. **Calibrate review guidance.** The Student runs a baseline calibration split.
+   H-star proposes one bounded review rule, which is tested on discovery and sealed
+   regression tasks before being frozen as Kappa Guidance.
+2. **Collect reviewed trajectories.** The Student proposes actions and the Reviewer
+   either passes them or supplies the smallest valid replacement before execution.
+3. **Distill memory.** Reviewed Episodes are persisted to MemMachine. A Consolidator
+   proposes CREATE, REINFORCE, REFINE, or RETIRE operations over an immutable snapshot.
+4. **Promote a version.** A deterministic gate compares the Candidate and Accepted
+   Versions on identical promotion tasks and budgets.
+5. **Evaluate transfer.** A frozen Student is evaluated with and without accepted
+   Behavior Cards on the untouched final set.
 
-The editable architecture source is available at [memory-distillation-system-design.drawio](docs/assets/memory-distillation-system-design.drawio).
+Calibration never creates Behavior Cards. H-star and Kappa are frozen before
+measured collection begins, and local JSONL traces are telemetry rather than agent
+memory.
 
-### One reviewed action
+## Quick start
 
-```text
-Student proposal
-      │
-      ▼
-Reviewer + frozen Kappa
-  ├── PASS ───────┐
-  └── REPLACE ────┤
-                  ▼
-           Accepted action
-                  │
-      ┌───────────┼────────────┐
-      ▼           ▼            ▼
- image tools   OpenShell    final scorer
-      └───────────┼────────────┘
-                  ▼
-        public observation
-                  │
-                  ▼
-          next Student turn
-```
-
-Only the accepted action and its public observation enter the next Student turn. Private Reviewer reasoning remains outside Student context and sanitized replay.
-
-Generated Python runs only through the NemoClaw-managed OpenShell boundary. The adapter applies network, filesystem, process, memory, timeout, and output controls without a local fallback.
-
-## Experiment conditions
-
-| Condition | Reviewer | Memory | Purpose |
-|---|---:|---|---|
-| **C0** | Off | None | Minimal-harness baseline |
-| **C1** | On | None | Online-review ceiling and cost |
-| **C2** | Off | Relevant cards from the Accepted Version | Primary memory-distilled condition |
-| **C3** | Off | Trigger-irrelevant accepted cards | Extra-context control |
-
-C2 tests whether reviewed behavior transfers through memory without online Reviewer calls. C3 separates useful retrieval from gains caused by receiving additional context.
-
-The report includes paired capability delta, Positive and Negative Transfer, intervention rate, latency, tokens, cost, and the eligible sample size for each comparison.
-
-## Experiment invariants
-
-- The Minimal Harness, models, prompts, tools, budgets, and decoding settings do not change between compared conditions.
-- H-star and Kappa use only the 8-item discovery and separate 8-item regression calibration splits.
-- Calibration produces no Behavior Cards and no consolidation-eligible Reviewed Episodes.
-- The Student retrieves only answer-free cards from one explicitly pinned Accepted or Candidate Version.
-- Raw Reviewed Episodes never serve the primary Student condition.
-- Candidate Versions are immutable and screened before promotion.
-- Accepted-pointer changes require conditional, atomic semantics; non-atomic promotion is rejected.
-- The Final Held-Out Set cannot affect prompts, models, thresholds, retrieval, cards, or promotion.
-- Local JSONL is telemetry for metrics and replay, never a memory source for an agent.
-
-## Technology stack
-
-| Component | Responsibility |
-|---|---|
-| [ChartQA](https://github.com/vis-nlp/ChartQA) | Primary multimodal benchmark and official scoring behavior |
-| [Crusoe Managed Inference](https://www.crusoe.ai/cloud/managed-inference) | Student, Reviewer, H-star Analysis, and Consolidator inference |
-| NVIDIA Nemotron | Privileged multimodal Reviewer |
-| [MemMachine](https://github.com/MemMachine/MemMachine) | Managed Reviewed Episodes, immutable versions, Behavior Cards, and accepted state |
-| NemoClaw + OpenShell | Policy-controlled execution for Student-generated Python |
-| FastAPI + Pydantic | Typed orchestration, APIs, validation, and live event streaming |
-| React + Vite | Live and replayable Experiment Visualizer |
-
-## Repository structure
-
-```text
-backend/
-  experiment_manifests/           # frozen development and final assignments
-  src/memory_distillation/
-    benchmark/                     # isolated ChartQA access and scoring
-    calibration/                   # H-star proposal, regression gate, Kappa freeze
-    evaluation/                    # paired C0-C3 execution and reporting
-    inference/                     # Crusoe and deterministic adapters
-    operational_memory/            # MemMachine and in-memory test adapters
-    review_policy/                 # immutable Kappa contracts and screening
-    sandbox/                       # OpenShell and deterministic adapters
-    task_execution/                # typed Student/Reviewer action loop
-    telemetry/                     # append-only events and sanitized replay
-    versioning/                    # consolidation, retrieval, and promotion
-    visualizer/                    # dashboard evidence contracts
-  tests/
-
-frontend/
-  src/                             # React Experiment Visualizer
-
-docs/
-  adr/                             # accepted architectural decisions
-  assets/                          # architecture and lifecycle diagrams
-```
-
-## Local development
-
-### Prerequisites
+### Requirements
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
 - Node.js and npm
 - Docker, NemoClaw, and OpenShell for live sandbox execution
-- Provider credentials only for explicit live workflows
+- Crusoe and MemMachine credentials for their respective live workflows
 
-### Backend
+### Install
 
 ```bash
+git clone <repository-url>
+cd recursive-agents-hackathon
+
 cd backend
 uv sync
-uv run uvicorn memory_distillation.main:app --reload
-```
 
-The API is served at `http://127.0.0.1:8000`. Its dashboard endpoints expose validated live artifacts and server-sent `RunEvent` updates.
-
-### Frontend
-
-```bash
-cd frontend
+cd ../frontend
 npm ci
-npm run dev
 ```
 
-Vite serves the visualizer at `http://127.0.0.1:5173` and proxies `/api` requests to FastAPI.
-
-### ChartQA data
-
-The full dataset is intentionally excluded from Git. Place the official repository at the default development path:
-
-```text
-.local/chartqa-source/ChartQA Dataset/
-```
-
-The frozen manifests under `backend/experiment_manifests/` bind calibration, Collection, Promotion, and Final tasks by identifier and image hash.
-
-## Configuration
-
-Copy the redacted template and provide only the credentials needed by the workflow being run:
+Copy the environment template and add the credentials available to you:
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-The configuration groups are:
+`backend/.env` is ignored by Git. Do not commit provider keys or generated
+experiment artifacts.
 
-- `CRUSOE_*`: inference endpoint and fixed model roles
-- `MEMMACHINE_*`: managed Operational Memory project
-- `OPENSHELL_*`: pre-provisioned NemoClaw/OpenShell sandbox
+### Download ChartQA
 
-Secrets remain in the ignored `backend/.env`. Dataset files, model weights, raw provider payloads, experiment traces, and generated evaluation artifacts are also excluded from version control.
+The dataset is intentionally excluded from the repository:
+
+```bash
+git clone https://github.com/vis-nlp/ChartQA.git .local/chartqa-source
+```
+
+The default loader expects:
+
+```text
+.local/chartqa-source/ChartQA Dataset/
+```
+
+Committed manifests bind every experiment task to a dataset revision, task ID, and
+image hash.
+
+### Run the application
+
+Start the API:
+
+```bash
+cd backend
+uv run uvicorn memory_distillation.main:app --reload
+```
+
+Start the visualizer in another terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+The API defaults to `http://127.0.0.1:8000`. Vite defaults to
+`http://127.0.0.1:5173` and proxies `/api` requests to FastAPI.
+
+## Live calibration
+
+Check provider identities, the sandbox, token ceiling, estimated maximum cost, and
+artifact destination without starting paid inference:
+
+```bash
+cd backend
+uv run memory-distillation calibrate
+```
+
+Start the paid Stage 0 run only after reviewing that preflight:
+
+```bash
+uv run memory-distillation calibrate --confirm-paid-run
+```
+
+Calibration uses these fixed roles:
+
+| Role | Default model |
+|---|---|
+| Student | `Qwen/Qwen3.8-27B` |
+| Reviewer | `nvidia/NVIDIA-Nemotron-3.5-Super-VL` |
+| H-star analysis | `deepseek-ai/DeepSeek-V4.1-Flash` |
+| Consolidator | `nvidia/Nemotron-3.5-Lightning-30B-A3B` |
+
+Live progress is written to `.artifacts/calibration/current/` and streamed to the
+visualizer. The directory must be empty before a new run so previous evidence cannot
+be overwritten silently. A successful run produces:
+
+```text
+.artifacts/calibration/current/
+  events.jsonl
+  status.json
+  hstar.json
+  kappa.json
+  report.json
+```
+
+Private model reasoning, credentials, benchmark answers, and raw provider payloads
+are excluded from public telemetry.
+
+## Architecture
+
+![System design](docs/assets/memory-distillation-system-design.svg)
+
+The Python backend is a modular monolith. Provider-specific code is isolated behind
+typed inference, sandbox, benchmark, telemetry, and operational-memory adapters. The
+React frontend consumes only the FastAPI dashboard API and sanitized server-sent
+events.
+
+Student-generated Python can execute only through the NemoClaw-managed OpenShell
+boundary. There is no local execution fallback.
+
+The editable architecture source is
+[memory-distillation-system-design.drawio](docs/assets/memory-distillation-system-design.drawio).
+
+## Evaluation design
+
+The final experiment compares four paired conditions:
+
+| Condition | Reviewer | Memory | Question answered |
+|---|---:|---|---|
+| C0 | Off | None | How capable is the fixed Student alone? |
+| C1 | On | None | What is the ceiling with online review? |
+| C2 | Off | Relevant accepted cards | Does distilled memory improve the Student? |
+| C3 | Off | Trigger-irrelevant cards | Is any gain more than extra context? |
+
+The report tracks capability delta, Positive and Negative Transfer, intervention
+rate, latency, token usage, cost, and eligible paired sample size. The final held-out
+set cannot influence prompts, models, thresholds, retrieval, memory, or promotion.
+
+## Repository layout
+
+```text
+backend/
+  experiment_manifests/        Frozen ChartQA task assignments
+  src/memory_distillation/
+    benchmark/                  Dataset access and official scoring
+    calibration/                H-star proposal and Kappa freeze
+    evaluation/                 Paired C0-C3 execution and reports
+    inference/                  Crusoe and deterministic adapters
+    operational_memory/         MemMachine and in-memory adapters
+    review_policy/              Kappa schemas and screening
+    sandbox/                    OpenShell execution boundary
+    task_execution/             Student/Reviewer action loop
+    telemetry/                  JSONL events and replay
+    versioning/                 Consolidation, retrieval, and promotion
+    visualizer/                 Dashboard evidence API
+  tests/
+frontend/                       React/Vite experiment visualizer
+docs/                           Proposal, ADRs, diagrams, and evidence
+```
 
 ## Verification
 
-The default backend suite is offline and deterministic:
+Run the offline backend checks:
 
 ```bash
 cd backend
@@ -192,16 +220,15 @@ uv run ruff check .
 uv run mypy
 ```
 
-Frontend verification uses the pinned npm lockfile:
+Run the frontend checks:
 
 ```bash
 cd frontend
-npm ci
 npm run typecheck
 npm run build
 ```
 
-Live integration contracts are explicit, opt-in commands:
+Live integration smoke tests are explicit and opt-in:
 
 ```bash
 cd backend
@@ -210,36 +237,34 @@ uv run verify-memmachine --confirm-live
 uv run verify-openshell --confirm-live
 ```
 
-The checks validate provider schemas and model identities, managed-memory round trips and immutable records, and the OpenShell containment boundary.
+These commands can make external requests or mutate managed test state. Review their
+preflight output before confirming a live run.
 
-## H-star and Kappa calibration
+## Configuration
 
-Calibration is shell-driven so the dashboard can remain read-only. The first command prints model identities, sandbox identity, request bounds, token ceiling, estimated price range, and artifact scope.
+All application configuration is loaded through
+`backend/src/memory_distillation/settings.py`:
 
-```bash
-cd backend
-uv run memory-distillation calibrate
-uv run memory-distillation calibrate --confirm-paid-run
-```
+- `CRUSOE_*` selects the inference endpoint and fixed model roles.
+- `MEMMACHINE_*` selects the managed Operational Memory project.
+- `OPENSHELL_*` selects the pre-provisioned execution sandbox.
 
-The paid run exposes only the discovery split while H-star is proposed, then loads the separate regression split. Deterministic evidence decides which rules enter Kappa.
-
-Public progress is written under `.artifacts/calibration/current/` and streamed to the visualizer. Private reasoning, credentials, scoring references, and raw provider payloads are excluded.
-
-The resulting `hstar.json`, `kappa.json`, and `report.json` artifacts are immutable inputs to later Collection and evaluation stages.
+The redacted defaults and required variable names are documented in
+[`backend/.env.example`](backend/.env.example).
 
 ## Documentation
 
 - [Revised proposal](docs/PROPOSAL_revised.html)
 - [Methodology addendum](docs/PROPOSAL_addendum.md)
 - [Canonical terminology](CONTEXT.md)
-- [Architectural decisions](docs/adr/)
+- [Architecture decisions](docs/adr/)
 - [Crusoe capability evidence](docs/verification/2026-10-17-crusoe-capabilities.md)
+- [Contributor and agent conventions](AGENTS.md)
 
-## Inspiration and extension
+## Inspiration
 
-This project is inspired by [Harness-Zero: Harness Distillation via Agent-as-Harness](https://arxiv.org/abs/2609.24974v1).
-
-It reuses the response-boundary supervision idea, then changes the transfer mechanism: reviewed behavior becomes inspectable, versioned external memory rather than fine-tuned model parameters.
-
-The runtime excludes Harness-Zero's Harbor, DeepAgents, SFT, benchmark banks, and single-`execute` assumptions. ChartQA uses this repository's typed actions, sandbox boundary, version lifecycle, and C0–C3 evaluation.
+This project is inspired by
+[Harness-Zero: Harness Distillation via Agent-as-Harness](https://arxiv.org/abs/2609.24974v1).
+It keeps response-boundary supervision but changes the transfer mechanism: reviewed
+behavior becomes inspectable, versioned external memory rather than fine-tuned model
+parameters.

@@ -30,12 +30,15 @@ class Settings(BaseSettings):
     crusoe_reviewer_model: str | None = None
     crusoe_consolidator_model: str | None = None
     crusoe_hstar_model: str | None = None
-    crusoe_max_total_tokens: int = Field(default=500_000, gt=0)
+    crusoe_max_total_tokens: int = Field(default=2_000_000, gt=0)
     crusoe_timeout_seconds: float = Field(default=60, gt=0)
     crusoe_max_retries: int = Field(default=1, ge=0, le=3)
-    crusoe_student_max_output_tokens: int = Field(default=512, ge=64, le=4_096)
-    crusoe_reviewer_max_output_tokens: int = Field(default=512, ge=64, le=4_096)
-    crusoe_hstar_max_output_tokens: int = Field(default=1_200, ge=128, le=8_192)
+    # Structured-output providers may spend substantial tokens satisfying a
+    # schema even when the resulting action is short. Use each configured
+    # boundary's supported ceiling so valid JSON is not truncated mid-object.
+    crusoe_student_max_output_tokens: int = Field(default=4_096, ge=64, le=4_096)
+    crusoe_reviewer_max_output_tokens: int = Field(default=4_096, ge=64, le=4_096)
+    crusoe_hstar_max_output_tokens: int = Field(default=8_192, ge=128, le=8_192)
 
     openshell_sandbox_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,18}$")
     openshell_gateway: str = Field(default="nemoclaw", min_length=1)

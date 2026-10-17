@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from memory_distillation.benchmark import Score, TaskAsset, TaskInput
-from memory_distillation.inference import DeterministicInference
+from memory_distillation.inference import DeterministicInference, InferenceRequest, InferenceResult
 from memory_distillation.review_policy import KappaArtifact, KappaRule, RuleEvidence
 from memory_distillation.sandbox import DeterministicSandbox, SandboxResult
 from memory_distillation.task_execution import (
@@ -24,6 +24,7 @@ from memory_distillation.task_execution import (
     TaskExecutor,
     TaskRun,
 )
+from memory_distillation.task_execution.models import RunCompletedEvent
 from memory_distillation.telemetry import InMemoryEventSink
 
 
@@ -68,6 +69,30 @@ class FixtureVerifier:
     def score(self, task_id: str, prediction: str) -> Score:
         assert task_id == "chartqa:fixture:001"
         return Score(correct=prediction == "42", method="text_exact")
+
+
+class _TruncatedStructuredOutput(RuntimeError):
+    failure_kind = "invalid_structured_output"
+
+
+class _FailingInference:
+    def generate(self, request: InferenceRequest) -> InferenceResult[StudentAction]:
+        raise _TruncatedStructuredOutput
+
+
+def test_inference_failure_preserves_sanitized_provider_category() -> None:
+    task, asset = _fixture_input()
+    run = TaskExecutor(
+        inference=_FailingInference(),
+        sandbox=DeterministicSandbox(results={}),
+        verifier=FixtureVerifier(),
+        event_sink=InMemoryEventSink(),
+    ).run(task=task, asset=asset, policy=ExecutionPolicy(), seed=17)
+
+    completion = run.events[-1]
+    assert isinstance(completion, RunCompletedEvent)
+    assert completion.termination_reason == "inference_failed"
+    assert completion.failure_kind == "invalid_structured_output"
 
 
 def test_offline_baseline_trajectory_is_complete_and_reproducible() -> None:

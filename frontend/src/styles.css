@@ -102,6 +102,35 @@ button { font: inherit; }
 .live-signal { width: 12px; height: 12px; border: 2px solid #52615c; border-radius: 50%; }
 .live-signal.on { border-color: var(--mint); background: var(--mint); box-shadow: 0 0 0 5px rgb(103 232 189 / 10%), 0 0 15px var(--mint); }
 .banner-metric { min-width: 80px; padding-left: 25px; border-left: 1px solid #293430; } .banner-metric small, .banner-metric b { display: block; } .banner-metric small { color: #6f7e79; font: 8px ui-monospace, monospace; text-transform: uppercase; } .banner-metric b { margin-top: 5px; font-size: 11px; }
+.run-state-note { display: flex; gap: 12px; align-items: center; padding: 11px 14px; border: 1px solid #5c4930; border-radius: 9px; color: #c7ad82; background: #201a12; font-size: 10px; }
+.run-state-note b { flex: none; color: var(--amber); }
+.run-state-note.failed { border-color: #683842; color: #c58e96; background: #251417; }
+.run-state-note.failed b { color: var(--red); }
+.task-trace { overflow: hidden; border: 1px solid #25312d; border-radius: 10px; }
+.task-trace-head, .task-trace-row { display: grid; grid-template-columns: minmax(220px, 1.25fr) minmax(180px, 1fr) minmax(190px, 1fr) minmax(135px, .65fr); }
+.task-trace-head { color: #65736e; background: #0a0e0d; font: 8px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+.task-trace-head span { padding: 10px 13px; border-right: 1px solid #202a27; }
+.task-trace-row { position: relative; background: #0d1211; }
+.task-trace-row + .task-trace-row { border-top: 1px solid #222d2a; }
+.task-trace-row::before { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: #52615c; content: ""; }
+.task-trace-row.correct::before { background: var(--mint); }
+.task-trace-row.incorrect::before { background: var(--amber); }
+.task-trace-row.failed::before { background: var(--red); }
+.task-cell { min-width: 0; padding: 13px; border-right: 1px solid #202a27; }
+.task-cell:last-child { border-right: 0; }
+.task-cell small, .task-cell strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-cell small { color: #66756f; font: 8px ui-monospace, monospace; letter-spacing: .04em; }
+.task-cell strong { margin-top: 6px; color: #b7c3bf; font-size: 10px; font-weight: 600; }
+.task-cell.identity { display: flex; gap: 10px; align-items: center; }
+.task-cell.identity > div { min-width: 0; }
+.task-cell.identity b { display: block; overflow: hidden; color: #aebbb6; font: 9px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.task-cell.identity small { margin-top: 5px; color: #66756f; }
+.task-number { display: grid; flex: none; place-items: center; width: 27px; height: 27px; border: 1px solid #30413b; border-radius: 7px; color: #7edebd; font: 8px ui-monospace, monospace; }
+.task-cell.result { display: flex; gap: 9px; align-items: center; }
+.result-dot { flex: none; width: 8px; height: 8px; border: 2px solid #63716c; border-radius: 50%; }
+.result-dot.correct { border-color: var(--mint); background: var(--mint); box-shadow: 0 0 8px rgb(103 232 189 / 45%); }
+.result-dot.incorrect { border-color: var(--amber); background: var(--amber); }
+.result-dot.failed { border-color: var(--red); background: var(--red); }
 .timeline { position: relative; } .timeline::before { position: absolute; top: 20px; bottom: 20px; left: 43px; width: 1px; background: #293631; content: ""; }
 .event-row { display: grid; grid-template-columns: 28px 34px 1fr; gap: 12px; align-items: start; padding: 10px 0; }
 .event-seq { padding-top: 9px; color: #4f5e59; font: 8px ui-monospace, monospace; }
@@ -139,6 +168,7 @@ button { font: inherit; }
   .sidebar nav button, .sidebar nav button.active { justify-content: center; font-size: 0; } .sidebar-foot { justify-content: center; } .workspace { padding: 28px 24px; }
   .hero-card { grid-template-columns: 1fr; padding: 38px; } .orb-wrap { display: none; } .stat-row { grid-template-columns: 1fr 1fr; }
   .pipeline { grid-template-columns: 1fr 25px 1fr; } .pipeline article:nth-of-type(n+3), .pipeline-arrow:nth-of-type(n+3) { display: none; }
+  .task-trace { overflow-x: auto; } .task-trace-head, .task-trace-row { min-width: 850px; }
 }
 
 @media (max-width: 720px) {

@@ -59,7 +59,7 @@ class ExecutionPolicy(BaseModel):
     max_actions: int = Field(default=8, ge=1)
     max_tool_calls: int = Field(default=8, ge=0)
     max_python_calls: int = Field(default=2, ge=0)
-    max_total_tokens: int = Field(default=8_000, ge=1)
+    max_total_tokens: int = Field(default=100_000, ge=1)
     max_elapsed_ms: int = Field(default=120_000, ge=1)
     sandbox_timeout_ms: int = Field(default=10_000, ge=1)
     max_crop_coordinate: int = Field(default=8_192, ge=1)
@@ -213,6 +213,12 @@ class RunCompletedEvent(BaseModel):
     task_id: str
     termination_reason: TerminationReason
     correct: bool | None
+    failure_kind: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
 
 
 RunEvent = Annotated[

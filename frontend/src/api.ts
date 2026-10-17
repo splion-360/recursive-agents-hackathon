@@ -8,6 +8,8 @@ export type RunEvent = {
   type: string;
   sequence: number;
   task_id: string;
+  seed?: number;
+  kappa_hash?: string | null;
   turn_index?: number;
   action?: StudentAction;
   review?: {

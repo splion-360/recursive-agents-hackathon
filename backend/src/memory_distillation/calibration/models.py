@@ -229,7 +229,10 @@ def outcome(
 
 def _require_correct(run: TaskRun) -> bool:
     if run.termination_reason != "completed" or run.score is None:
+        failure_kind = getattr(run.events[-1], "failure_kind", None) if run.events else None
+        detail = f": {failure_kind}" if failure_kind else ""
         raise RuntimeError(
-            f"calibration task did not complete cleanly: {run.task_id} ({run.termination_reason})"
+            "calibration task did not complete cleanly: "
+            f"{run.task_id} ({run.termination_reason}{detail})"
         )
     return run.score.correct

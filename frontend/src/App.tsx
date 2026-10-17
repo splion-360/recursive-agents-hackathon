@@ -31,7 +31,7 @@ export function App() {
         .then((value) => {
           if (!active) return;
           setSnapshot(value);
-          setEvents((current) => mergeEvents(current, value.recent_events));
+          setEvents(value.recent_events);
           setError(null);
         })
         .catch((reason: unknown) => {
@@ -125,10 +125,15 @@ function Overview({ snapshot, events, onNavigate }: { snapshot: DashboardSnapsho
 
 function LiveRun({ snapshot, events, connected }: { snapshot: DashboardSnapshot; events: RunEvent[]; connected: boolean }) {
   const currentTask = snapshot.calibration.current_task_id;
+  const traces = taskTraces(events);
+  const completed = traces.filter((trace) => trace.some((event) => event.type === "run_completed"));
+  const scored = completed.filter((trace) => trace.at(-1)?.correct !== undefined && trace.at(-1)?.correct !== null);
+  const correct = scored.filter((trace) => trace.at(-1)?.correct === true).length;
   return <div className="page-stack">
-    <section className="live-banner panel"><div><span className={`live-signal ${connected ? "on" : ""}`} /><div><b>{snapshot.calibration.state === "running" ? "Forward pass in progress" : "Live monitor ready"}</b><small>{currentTask ?? "Start Ticket 14 in the shell; events will appear automatically."}</small></div></div><Metric label="Stage" value={pretty(snapshot.calibration.stage)} /><Metric label="Events" value={String(snapshot.event_count)} /><Metric label="Elapsed" value={formatDuration(snapshot.calibration.elapsed_ms)} /></section>
-    <section className="panel trace-panel"><PanelTitle eyebrow="PUBLIC RUN EVENT STREAM" title="Typed trajectory" detail="Private Reviewer reasoning and answer labels never cross this boundary" />
-      {events.length === 0 ? <EmptyState title="No forward pass yet" body="The SSE connection is ready. Run the calibration command in your shell to populate this trace." /> : <div className="timeline">{events.slice(-30).map((event, index) => <EventRow event={event} key={`${event.task_id}-${event.sequence}-${index}`} />)}</div>}
+    <section className="live-banner panel"><div><span className={`live-signal ${connected ? "on" : ""}`} /><div><b>{snapshot.calibration.state === "running" ? "Forward pass in progress" : snapshot.calibration.state === "failed" ? "Run stopped" : "Live monitor ready"}</b><small>{currentTask ?? "Start Ticket 14 in the shell; task results will appear automatically."}</small></div></div><Metric label="Stage" value={pretty(snapshot.calibration.stage)} /><Metric label="Tasks" value={String(traces.length)} /><Metric label="Score" value={scored.length ? `${correct}/${scored.length} scored` : "—"} /></section>
+    {snapshot.calibration.state === "failed" ? <div className="run-state-note failed"><b>Calibration stopped</b><span>{snapshot.calibration.message}</span></div> : null}
+    <section className="panel trace-panel"><PanelTitle eyebrow="PUBLIC TASK RESULTS" title="Compact trajectory monitor" detail="One row per task · Student output, Reviewer decision, and official score" />
+      {events.length === 0 ? <EmptyState title="No forward pass yet" body="The SSE connection is ready. Run the calibration command in your shell to populate this table." /> : <TaskTraceTable traces={traces} />}
     </section>
   </div>;
 }
@@ -166,7 +171,21 @@ function SystemHealth({ snapshot }: { snapshot: DashboardSnapshot }) {
 
 function ProgressCard({ snapshot }: { snapshot: DashboardSnapshot }) { const c = snapshot.calibration; return <div className="panel progress-card"><PanelTitle eyebrow="TICKET 14" title="Calibration progress" detail={c.message} /><Progress label="Discovery trajectories" value={c.discovery_completed} total={8} /><Progress label="Regression trajectories" value={c.regression_completed} total={8} /><Progress label="PASS / REPLACE smoke" value={c.smoke_completed} total={c.smoke_total || 5} /><div className="current-step"><span>NOW</span><b>{pretty(c.stage)}</b><small>{c.current_task_id ?? "Waiting for shell command"}</small></div></div>; }
 function RecentEvents({ events, onNavigate }: { events: RunEvent[]; onNavigate: () => void }) { return <div className="panel recent-card"><PanelTitle eyebrow="TRACE TAIL" title="Recent events" detail="Sanitized RunEvent projection" />{events.length ? events.map((event, index) => <MiniEvent event={event} key={`${event.task_id}-${event.sequence}-${index}`} />) : <EmptyState title="Stream is quiet" body="No calibration events have been written." />}<button className="text-button" onClick={onNavigate}>Open full trajectory →</button></div>; }
-function EventRow({ event }: { event: RunEvent }) { const decision = event.review?.decision; return <article className={`event-row ${decision ?? ""}`}><div className="event-seq">{String(event.sequence).padStart(2, "0")}</div><div className="event-glyph">{eventIcon(event.type)}</div><div className="event-body"><div><b>{pretty(event.type)}</b>{decision ? <span className={`decision ${decision}`}>{decision.toUpperCase()}</span> : null}<time>{shortTask(event.task_id)}</time></div><p>{eventDescription(event)}</p></div></article>; }
+function TaskTraceTable({ traces }: { traces: RunEvent[][] }) { return <div className="task-trace"><div className="task-trace-head"><span>Task / policy</span><span>Student proposal</span><span>Reviewer</span><span>Official result</span></div>{traces.map((trace, index) => <TaskTraceRow events={trace} index={index + 1} key={`${trace[0]?.task_id ?? "partial"}-${index}`} />)}</div>; }
+function TaskTraceRow({ events, index }: { events: RunEvent[]; index: number }) {
+  const start = events.find((event) => event.type === "run_started");
+  const proposal = events.filter((event) => event.type === "action_proposed").at(-1);
+  const review = events.filter((event) => event.type === "action_reviewed").at(-1)?.review;
+  const completion = events.filter((event) => event.type === "run_completed").at(-1);
+  const policy = start?.kappa_hash ? `κ ${start.kappa_hash.slice(0, 8)}` : review ? "H* candidate" : "Baseline";
+  const result = resultLabel(completion);
+  return <article className={`task-trace-row ${result.tone}`}>
+    <div className="task-cell identity"><span className="task-number">{String(index).padStart(2, "0")}</span><div><b title={start?.task_id ?? events[0]?.task_id}>{shortTask(start?.task_id ?? events[0]?.task_id ?? "Unknown task")}</b><small>{policy}{start?.seed !== undefined ? ` · seed ${start.seed}` : ""}</small></div></div>
+    <div className="task-cell"><small>{proposal ? pretty(proposal.action?.type ?? "action") : "Waiting"}</small><strong title={actionSummary(proposal?.action)}>{actionSummary(proposal?.action)}</strong></div>
+    <div className="task-cell"><small>{review ? review.decision.toUpperCase() : "BASELINE"}</small><strong title={reviewSummary(review)}>{reviewSummary(review)}</strong></div>
+    <div className="task-cell result"><span className={`result-dot ${result.tone}`} /> <div><strong>{result.label}</strong><small>{completion ? pretty(completion.failure_kind ?? completion.termination_reason ?? "completed") : `${events.length} events received`}</small></div></div>
+  </article>;
+}
 function MiniEvent({ event }: { event: RunEvent }) { return <div className="mini-event"><span>{eventIcon(event.type)}</span><div><b>{pretty(event.type)}</b><small>{eventDescription(event)}</small></div><code>{event.sequence}</code></div>; }
 function PhaseCard({ index, title, count, total, detail, locked }: { index: string; title: string; count: number; total: number; detail: string; locked: boolean }) { const percentage = Math.round((count / total) * 100); return <article className={`phase-card ${locked ? "locked" : ""}`}><span>{index}</span><div><small>{locked ? "SEALED" : "CALIBRATION SPLIT"}</small><h3>{title}</h3><p>{detail}</p></div><strong>{count}<i>/{total}</i></strong><div className="phase-bar"><i style={{ width: `${percentage}%` }} /></div></article>; }
 function Stat({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: string }) { return <article className={`stat-card ${tone}`}><small>{label}</small><strong>{value}</strong><p>{hint}</p></article>; }
@@ -192,3 +211,8 @@ function formatDuration(milliseconds: number): string { if (milliseconds < 1_000
 function stageReached(current: string, target: string): boolean { const order = ["waiting", "preflight", "discovery", "hstar_proposal", "regression", "kappa_freeze", "smoke_test", "complete"]; return order.indexOf(current) >= order.indexOf(target); }
 function eventIcon(type: string): string { return ({ run_started: "▶", inference_requested: "◎", action_proposed: "◇", action_reviewed: "κ", observation: "▣", sandbox_failure: "!", run_completed: "✓" } as Record<string, string>)[type] ?? "·"; }
 function eventDescription(event: RunEvent): string { if (event.type === "run_started") return "Run opened with frozen seed and policy identity."; if (event.type === "inference_requested") return `Student inference requested for turn ${event.turn_index ?? 0}.`; if (event.type === "action_proposed") return `Student proposed ${pretty(event.action?.type ?? "action")}.`; if (event.type === "action_reviewed") return event.review?.decision === "replace" ? `Reviewer replaced ${pretty(event.review.proposed_action.type)} with ${pretty(event.review.accepted_action.type)}.` : `Reviewer passed ${pretty(event.review?.accepted_action.type ?? "action")} unchanged.`; if (event.type === "observation") return event.observation?.content ?? "Sandbox observation returned."; if (event.type === "sandbox_failure") return `OpenShell failed closed: ${pretty(event.failure_kind ?? "unknown")}.`; if (event.type === "run_completed") return `Run ${pretty(event.termination_reason ?? "completed")}.`; return pretty(event.type); }
+
+function taskTraces(events: RunEvent[]): RunEvent[][] { const traces: RunEvent[][] = []; for (const event of events) { if (event.type === "run_started" || traces.length === 0) traces.push([event]); else traces.at(-1)?.push(event); } return traces; }
+function actionSummary(action: RunEvent["action"]): string { if (!action) return "Waiting for Student"; if (action.type === "final_answer") return action.answer; if (action.type === "run_python") return action.code; if (action.type === "crop") return `(${action.x0}, ${action.y0}) → (${action.x1}, ${action.y1})`; return "Inspect image"; }
+function reviewSummary(review: RunEvent["review"]): string { if (!review) return "Reviewer intentionally disabled"; if (review.decision === "pass") return `${pretty(review.accepted_action.type)} unchanged`; return `${pretty(review.proposed_action.type)} → ${pretty(review.accepted_action.type)}`; }
+function resultLabel(completion: RunEvent | undefined): { label: string; tone: "running" | "correct" | "incorrect" | "failed" } { if (!completion) return { label: "Running", tone: "running" }; if (completion.termination_reason !== "completed") return { label: "Failed", tone: "failed" }; if (completion.correct === true) return { label: "Correct", tone: "correct" }; if (completion.correct === false) return { label: "Incorrect", tone: "incorrect" }; return { label: "Completed", tone: "running" }; }

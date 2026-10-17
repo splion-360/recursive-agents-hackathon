@@ -149,7 +149,7 @@ class TaskExecutor:
                         behavior_cards=behavior_cards,
                     )
                 )
-            except Exception:
+            except Exception as error:
                 return self._finish(
                     "inference_failed",
                     task,
@@ -163,6 +163,7 @@ class TaskExecutor:
                     tool_calls,
                     python_calls,
                     None,
+                    failure_kind=_sanitized_failure_kind(error),
                 )
 
             input_tokens += result.input_tokens
@@ -258,7 +259,7 @@ class TaskExecutor:
                             turn_index=turn_index,
                         )
                     )
-                except Exception:
+                except Exception as error:
                     return self._finish(
                         "reviewer_failed",
                         task,
@@ -274,6 +275,7 @@ class TaskExecutor:
                         None,
                         reviews,
                         review_calls,
+                        failure_kind=_sanitized_failure_kind(error),
                     )
                 pass_changed_action = (
                     result_review.decision == "pass"
@@ -557,6 +559,7 @@ class TaskExecutor:
         score: Score | None,
         reviews: list[ActionReview] | None = None,
         review_calls: int = 0,
+        failure_kind: str | None = None,
     ) -> TaskRun:
         if reviews is None:
             reviews = [event.review for event in events if isinstance(event, ActionReviewedEvent)]
@@ -566,6 +569,7 @@ class TaskExecutor:
             task_id=task.task_id,
             termination_reason=reason,
             correct=score.correct if score is not None else None,
+            failure_kind=failure_kind,
         )
         events.append(event)
         self._event_sink.emit(event)
@@ -589,3 +593,10 @@ class TaskExecutor:
                 events[0].kappa_hash if events and isinstance(events[0], RunStartedEvent) else None
             ),
         )
+
+
+def _sanitized_failure_kind(error: Exception) -> str:
+    """Expose an adapter's safe failure category without leaking its message."""
+
+    failure_kind = getattr(error, "failure_kind", None)
+    return failure_kind if isinstance(failure_kind, str) else type(error).__name__

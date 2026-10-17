@@ -231,13 +231,6 @@ def main(argv: list[str] | None = None) -> None:
     reviewer_model = _required(settings.crusoe_reviewer_model, "CRUSOE_REVIEWER_MODEL")
     hstar_model = _required(settings.crusoe_hstar_model, "CRUSOE_HSTAR_MODEL")
     sandbox_name = _required(settings.openshell_sandbox_name, "OPENSHELL_SANDBOX_NAME")
-    policy = ExecutionPolicy()
-    max_requests = (
-        16 * policy.max_actions
-        + 16 * (policy.max_actions + policy.max_review_calls)
-        + args.pilot_tasks * (policy.max_actions + policy.max_review_calls)
-        + 1
-    )
     with build_crusoe_client(settings) as preflight_client:
         preflight_models = tuple(
             preflight_client.get_model(model_id)
@@ -255,16 +248,12 @@ def main(argv: list[str] | None = None) -> None:
         / Decimal(1_000_000)
     )
     print(
-        "Calibration preflight:\n"
-        f"  student={resolved_identities[0]}\n"
-        f"  reviewer={resolved_identities[1]}\n"
-        f"  hstar={resolved_identities[2]}\n"
-        f"  sandbox={sandbox_name}\n"
-        f"  hard_token_ceiling={settings.crusoe_max_total_tokens}\n"
-        f"  conservative_cost_estimate=$0.00-${estimated_upper_cost}\n"
-        f"  worst_case_model_requests={max_requests}\n"
-        f"  artifact_write_scope={CALIBRATION_ARTIFACT_DIR}\n"
-        f"  pilot_tasks={args.pilot_tasks}"
+        "Calibration preflight\n"
+        f"  Models: {resolved_identities[0]} -> {resolved_identities[1]} "
+        f"(H-star: {resolved_identities[2]})\n"
+        f"  Limits: <= {settings.crusoe_max_total_tokens:,} tokens, "
+        f"estimated <= ${estimated_upper_cost}, {args.pilot_tasks} pilot tasks\n"
+        f"  Runtime: OpenShell/{sandbox_name}; artifacts={CALIBRATION_ARTIFACT_DIR}"
     )
     if not args.confirm_paid_run:
         print("Dry preflight only; rerun with --confirm-paid-run to execute paid calls.")
