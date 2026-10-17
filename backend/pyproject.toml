@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 verify-crusoe = "memory_distillation.inference.verify_crusoe:main"
+verify-openshell = "memory_distillation.sandbox.verify_openshell:main"
 
 [dependency-groups]
 dev = [
