@@ -30,11 +30,11 @@ _MILLION = Decimal(1_000_000)
 
 
 class CrusoeBudget(BaseModel):
-    """Hard aggregate admission limits for one client lifetime."""
+    """Aggregate token admission with an optional caller-selected cost cap."""
 
     model_config = ConfigDict(frozen=True)
 
-    max_cost_usd: Decimal = Field(gt=0)
+    max_cost_usd: Decimal | None = Field(default=None, gt=0)
     max_total_tokens: int = Field(gt=0)
 
 
@@ -349,13 +349,14 @@ class CrusoeClient:
             raise CrusoeAdmissionError("request exceeds the model context limit")
         if self._spent_tokens + estimated_tokens > self._budget.max_total_tokens:
             raise CrusoeAdmissionError("request exceeds the aggregate token budget")
-        estimated_cost = self._cost(
-            model,
-            input_tokens=serialized_bytes,
-            output_tokens=max_output_tokens,
-        )
-        if self._spent_cost + estimated_cost > self._budget.max_cost_usd:
-            raise CrusoeAdmissionError("request exceeds the aggregate cost budget")
+        if self._budget.max_cost_usd is not None:
+            estimated_cost = self._cost(
+                model,
+                input_tokens=serialized_bytes,
+                output_tokens=max_output_tokens,
+            )
+            if self._spent_cost + estimated_cost > self._budget.max_cost_usd:
+                raise CrusoeAdmissionError("request exceeds the aggregate cost budget")
 
     def _post_with_retries(self, payload: dict[str, Any]) -> tuple[httpx2.Response, int]:
         retry_count = 0
@@ -626,7 +627,6 @@ def build_crusoe_client(settings: Settings) -> CrusoeClient:
         base_url=str(settings.crusoe_base_url),
         api_key=settings.crusoe_api_key,
         budget=CrusoeBudget(
-            max_cost_usd=settings.crusoe_max_cost_usd,
             max_total_tokens=settings.crusoe_max_total_tokens,
         ),
         timeout_seconds=settings.crusoe_timeout_seconds,

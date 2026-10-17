@@ -100,7 +100,7 @@ def test_structured_completion_records_identity_usage_and_cost() -> None:
     with CrusoeClient(
         base_url="https://inference.example.test/v1",
         api_key=SecretStr("fixture-secret"),
-        budget=CrusoeBudget(max_cost_usd=Decimal("0.01"), max_total_tokens=1000),
+        budget=CrusoeBudget(max_total_tokens=1000),
         transport=httpx2.MockTransport(handler),
     ) as client:
         result = client.complete_json(

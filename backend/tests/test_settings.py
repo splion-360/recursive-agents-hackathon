@@ -1,4 +1,3 @@
-from decimal import Decimal
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -45,7 +44,6 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
     assert settings.crusoe_reviewer_model == "reviewer-v1"
     assert settings.crusoe_consolidator_model == "consolidator-v1"
     assert settings.crusoe_hstar_model == "hstar-v1"
-    assert settings.crusoe_max_cost_usd == Decimal("0.05")
     assert settings.crusoe_max_total_tokens == 500_000
     assert settings.crusoe_timeout_seconds == 60
     assert settings.crusoe_max_retries == 1

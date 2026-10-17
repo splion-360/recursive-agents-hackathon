@@ -249,9 +249,10 @@ def main(argv: list[str] | None = None) -> None:
         for model in preflight_models
         for price in (model.pricing.prompt, model.pricing.completion)
     )
-    estimated_upper_cost = min(
-        settings.crusoe_max_cost_usd,
-        Decimal(settings.crusoe_max_total_tokens) * max_token_price / Decimal(1_000_000),
+    estimated_upper_cost = (
+        Decimal(settings.crusoe_max_total_tokens)
+        * max_token_price
+        / Decimal(1_000_000)
     )
     print(
         "Calibration preflight:\n"
@@ -259,9 +260,8 @@ def main(argv: list[str] | None = None) -> None:
         f"  reviewer={resolved_identities[1]}\n"
         f"  hstar={resolved_identities[2]}\n"
         f"  sandbox={sandbox_name}\n"
-        f"  hard_cost_ceiling=${settings.crusoe_max_cost_usd}\n"
         f"  hard_token_ceiling={settings.crusoe_max_total_tokens}\n"
-        f"  conservative_cost_range=$0.00-${estimated_upper_cost}\n"
+        f"  conservative_cost_estimate=$0.00-${estimated_upper_cost}\n"
         f"  worst_case_model_requests={max_requests}\n"
         f"  artifact_write_scope={CALIBRATION_ARTIFACT_DIR}\n"
         f"  pilot_tasks={args.pilot_tasks}"
