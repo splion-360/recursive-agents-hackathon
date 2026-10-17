@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -20,6 +21,10 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
                 "CRUSOE_STUDENT_MODEL=student-v1",
                 "CRUSOE_REVIEWER_MODEL=reviewer-v1",
                 "CRUSOE_CONSOLIDATOR_MODEL=consolidator-v1",
+                "CRUSOE_MAX_COST_USD=0.05",
+                "CRUSOE_MAX_TOTAL_TOKENS=500000",
+                "CRUSOE_TIMEOUT_SECONDS=60",
+                "CRUSOE_MAX_RETRIES=1",
                 "OPENSHELL_BASE_URL=https://sandbox.example.test",
                 "OPENSHELL_API_KEY=sandbox-secret",
             )
@@ -38,6 +43,10 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
     assert settings.crusoe_student_model == "student-v1"
     assert settings.crusoe_reviewer_model == "reviewer-v1"
     assert settings.crusoe_consolidator_model == "consolidator-v1"
+    assert settings.crusoe_max_cost_usd == Decimal("0.05")
+    assert settings.crusoe_max_total_tokens == 500_000
+    assert settings.crusoe_timeout_seconds == 60
+    assert settings.crusoe_max_retries == 1
     assert str(settings.openshell_base_url) == "https://sandbox.example.test/"
     assert settings.openshell_api_key == SecretStr("sandbox-secret")
     assert "crusoe-secret" not in repr(settings)

@@ -1,6 +1,7 @@
 """Provider-independent inference contracts."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Protocol, TypeVar
 
 from memory_distillation.benchmark import TaskAsset, TaskInput
@@ -30,6 +31,8 @@ class InferenceResult[OutputT]:
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    retry_count: int = 0
+    actual_cost_usd: Decimal = Decimal(0)
 
 
 class InferenceClient(Protocol[OutputT]):

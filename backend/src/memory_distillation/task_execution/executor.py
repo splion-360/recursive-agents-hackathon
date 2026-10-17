@@ -3,7 +3,7 @@
 from typing import Protocol
 
 from memory_distillation.benchmark import Score, TaskAsset, TaskInput
-from memory_distillation.inference import InferenceClient, InferenceRequest
+from memory_distillation.inference.protocol import InferenceClient, InferenceRequest
 from memory_distillation.sandbox import Sandbox, SandboxRequest
 from memory_distillation.task_execution.models import (
     ActionProposedEvent,

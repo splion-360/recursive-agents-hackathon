@@ -1,6 +1,7 @@
 """Private Reviewer seam for PASS or REPLACE decisions."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Literal, Protocol
 
 from memory_distillation.benchmark import TaskAsset, TaskInput
@@ -31,6 +32,8 @@ class ReviewResult:
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    retry_count: int = 0
+    actual_cost_usd: Decimal = Decimal(0)
 
 
 class Reviewer(Protocol):
