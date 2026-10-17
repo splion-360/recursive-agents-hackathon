@@ -28,19 +28,45 @@ _Avoid_: Local Python runner, unrestricted shell
 The live and replayable interface that exposes action correction, memory formation, behavior retrieval, and measured improvement. It demonstrates the agent system but is not itself the product.
 _Avoid_: Dashboard, Streamlit app
 
+## Harness Artifacts
+
+**Minimal Harness (H)**:
+The fixed Student prompt, typed ChartQA action space, tools, decoding settings, and budgets shared by every compared condition. Memory context and Reviewer access vary only where a condition explicitly says so.
+_Avoid_: Student model, baseline prompt
+
+**Optimized Reference Harness (H-star)**:
+An empirically selected ChartQA reference harness proposed and evaluated only on the Harness Calibration Set. It may contain richer tools, checks, skills, or middleware than H, but it never executes measured Collection, Promotion, or Final Held-Out tasks.
+_Avoid_: Production harness, teacher model
+
+**Kappa Guidance**:
+The frozen, answer-free private review artifact adapted from accepted H-star components into checks, action recipes, review guidance, and failure patterns executable through H. The Reviewer consumes Kappa Guidance; Kappa is not a model or an additional agent role.
+_Avoid_: Kappa model, mutable reviewer prompt
+
+**Harness Calibration Set**:
+A fixed 16-item ChartQA manifest disjoint by task and image from Collection, Promotion, and Final Held-Out Sets. Eight discovery items may inform one H-star proposal; a separate eight-item regression subset accepts or rejects it without producing Behavior Cards.
+_Avoid_: Collection Set, Promotion Set
+
+**Lifecycle Pass**:
+One batched Version N to N+1 attempt: collect the fixed Collection Set against one Accepted Version, freeze its eligible Reviewed Episode snapshot, consolidate and screen one immutable Candidate Version, then accept or reject it on the complete Promotion Set. No per-task memory mutation becomes retrievable mid-pass.
+_Avoid_: Online learning, continuous update
+
 ## Agent Roles
 
 **Student**:
-The smaller multimodal agent that solves ChartQA tasks through the minimal action space and receives no reviewer assistance during final evaluation.
+The smaller multimodal agent that solves ChartQA tasks through the minimal action space. It receives no Reviewer assistance in C0, C2, or C3; C1 deliberately measures online Reviewer guidance as the ceiling.
 _Avoid_: Base model, worker
 
 **Reviewer**:
-The Nemotron multimodal agent that inspects each proposed Student action during collection and either accepts it or supplies the smallest valid replacement.
+The Nemotron multimodal agent that consumes frozen Kappa Guidance and inspects proposed Student actions during calibration, measured Collection, and the C1 ceiling condition. It either accepts the proposal or supplies the smallest valid replacement.
 _Avoid_: Judge, critic, teacher model
 
 **Consolidator**:
 The agent that converts repeated reviewed corrections into structured candidate behaviors while preserving their evidence and provenance.
 _Avoid_: Summarizer, memory writer
+
+**H-star Analysis Model**:
+An optional calibration-only model that may propose one bounded H-star revision. Its exact endpoint is discovered at the live-provider gate, and deterministic regression evidence—not the model—decides acceptance.
+_Avoid_: Required fourth runtime agent, promotion judge
 
 ## Memory and Evidence
 
@@ -57,8 +83,12 @@ A frozen batch of proposed behavior changes that must pass the promotion gate be
 _Avoid_: New memory, latest memory
 
 **Accepted Version**:
-The most recent Candidate Version that passed the promotion gate and remains active until a better candidate replaces it.
+The immutable version root eligible for Student retrieval: initially empty Accepted v000, then the most recent Candidate Version that passed the promotion gate. It remains active until a better candidate replaces it.
 _Avoid_: Production memory, current prompt
+
+**Accepted v000**:
+The immutable empty initial Accepted Version. It provides a real comparison root before any candidate is promoted and makes an unsuccessful first lifecycle pass representable without inventing memory.
+_Avoid_: Missing version, implicit baseline
 
 **Negative Transfer**:
 A regression where a Candidate Version causes the Student to fail a task that the Accepted Version solved.
@@ -107,6 +137,10 @@ _Avoid_: Web-grounded evaluation, open-book benchmark
 **Retrieval Policy**:
 The frozen rule that filters and selects a bounded number of accepted Behavior Cards for a task, with a no-memory fallback when none is sufficiently relevant.
 _Avoid_: Memory search, RAG pipeline
+
+**Irrelevant-Memory Control (C3)**:
+The Reviewer-free condition that receives Behavior Cards from a predeclared Accepted-Version donor pool whose triggers do not match the task. Assignment uses a frozen seed, matches C2 card count exactly and token count within 10%, and is reported unavailable when no honest match exists.
+_Avoid_: Random memory, shuffled answers
 
 **Definition of Done**:
 Verified completion of the autonomous version lifecycle, required integrations, controlled evaluation, and evidence-rich demo, regardless of whether the final hypothesis is supported.

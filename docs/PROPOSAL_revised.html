@@ -138,6 +138,7 @@
             </tbody>
           </table></div>
           <div class="callout risk"><strong>Novelty boundary</strong>If the Student retrieves solved examples, this is ordinary example RAG. The primary condition retrieves only answer-free Behavior Cards and forbids raw episodes.</div>
+          <div class="callout"><strong>Selective upstream reuse</strong>The reviewed Apache-2.0 upstream is pinned at <a href="https://github.com/metaevo-ai/harness-zero/tree/a4a6223241479c750fdab827c3a449bb1d41b99a"><code>a4a6223</code></a>. We may adapt its PASS/REPLACE contracts, response-boundary supervision, and H-star-to-Kappa mapping ideas with attribution. We explicitly exclude Harbor, DeepAgents, SFT, benchmark banks, and its single-<code>execute</code> runtime.</div>
         </section>
 
         <section id="hypothesis">
@@ -145,7 +146,7 @@
           <h2>A falsifiable claim, not a guaranteed success story.</h2>
           <div class="grid2">
             <article class="card"><h3>Hypothesis</h3><p>An Accepted Version will improve paired ChartQA accuracy over the minimal baseline while using fewer calls, tokens, or latency than online Reviewer guidance.</p></article>
-            <article class="card"><h3>Falsification</h3><p>The claim fails if memory does not improve accuracy, shuffled memory performs similarly, or gains require raw episodes, human curation, or leaked answers.</p></article>
+            <article class="card"><h3>Falsification</h3><p>The claim fails if memory does not improve accuracy, trigger-irrelevant memory performs similarly, or gains require raw episodes, human curation, or leaked answers.</p></article>
           </div>
           <div class="callout"><strong>Valid negative outcome</strong>A candidate that fails promotion and leaves the stronger Accepted Version active still proves the autonomous safety mechanism. It does not prove memory transfer.</div>
         </section>
@@ -156,12 +157,13 @@
           <p class="lead">The build never changes its meaning when account-specific model IDs differ. A smoke test chooses endpoints against explicit capability contracts.</p>
           <div class="grid3">
             <article class="card tint"><h3>Student</h3><p>The smallest available Crusoe multimodal model with measurable ChartQA headroom. It acts through the fixed minimal harness.</p></article>
-            <article class="card tint"><h3>Reviewer</h3><p>A Crusoe-hosted Nemotron multimodal model. During collection, it accepts or minimally replaces each proposed Student action.</p></article>
+            <article class="card tint"><h3>Reviewer</h3><p>A Crusoe-hosted Nemotron multimodal model. It consumes frozen Kappa Guidance and accepts or minimally replaces each proposed Student action.</p></article>
             <article class="card tint"><h3>Consolidator</h3><p>An available Crusoe text model selected for schema reliability. It converts repeated corrections into candidate procedures.</p></article>
             <article class="card"><h3>Promotion Gate</h3><p>Deterministic code compares candidate and accepted versions. It—not an LLM or human—makes the promotion decision.</p></article>
             <article class="card"><h3>Evaluator</h3><p>Official ChartQA normalization plus paired statistical analysis. It never writes memory or supplies task answers.</p></article>
-            <article class="card"><h3>Human operator</h3><p>Configures credentials and recovers infrastructure. The operator cannot edit cards, select favorable runs, or approve versions.</p></article>
+            <article class="card"><h3>H-star Analysis Model</h3><p>An optional calibration-only model may propose one bounded H-star revision. Its endpoint is discovered at the provider gate; regression evidence decides acceptance.</p></article>
           </div>
+          <div class="callout"><strong>Harness artifacts, not extra agents</strong><code>H</code> is the fixed Minimal Harness. <code>H-star</code> is a calibration-only optimized reference. <strong>Kappa Guidance</strong> is the frozen, answer-free artifact adapted from H-star for the Reviewer; Kappa is not a model. The human operator only configures credentials and recovers infrastructure.</div>
         </section>
 
         <section id="architecture">
@@ -172,18 +174,18 @@
             <figcaption>Solid paths affect agent behavior. Dashed gray paths are non-serving telemetry. <a href="./assets/memory-distillation-system-design.drawio">Open the editable draw.io source</a>.</figcaption>
           </figure>
           <div class="flow">
-            <div class="node"><b>1 · Collect</b><span>Student proposes typed actions on Collection Set tasks.</span></div>
-            <div class="node"><b>2 · Review</b><span>Nemotron emits PASS or the smallest valid replacement.</span></div>
+            <div class="node"><b>0 · Calibrate</b><span>Use the disjoint Harness Calibration Set to derive, hash, and freeze H-star and Kappa.</span></div>
+            <div class="node"><b>1 · Collect</b><span>Student proposes typed actions on all 40 Collection tasks against one Accepted Version.</span></div>
+            <div class="node"><b>2 · Review</b><span>Nemotron plus frozen Kappa emits PASS or the smallest valid replacement.</span></div>
             <div class="node"><b>3 · Persist</b><span>Reviewed Episodes enter managed MemMachine with provenance.</span></div>
-            <div class="node"><b>4 · Consolidate</b><span>Repeated corrections become structured Behavior Cards.</span></div>
           </div>
           <div class="flow">
-            <div class="node"><b>5 · Screen</b><span>Deterministic checks reject answers, IDs, values, or invalid schemas.</span></div>
-            <div class="node"><b>6 · Freeze</b><span>Cards form an immutable Candidate Version manifest.</span></div>
-            <div class="node"><b>7 · Promote</b><span>Candidate and Accepted Versions run on the Promotion Set.</span></div>
-            <div class="node"><b>8 · Deploy</b><span>The winner serves a fresh Student with Reviewer and writes off.</span></div>
+            <div class="node"><b>4 · Consolidate</b><span>One frozen episode snapshot produces CREATE, REINFORCE, REFINE, or RETIRE deltas.</span></div>
+            <div class="node"><b>5 · Screen and freeze</b><span>Deterministic checks reject contamination before one immutable Candidate Version forms.</span></div>
+            <div class="node"><b>6 · Promote</b><span>Candidate and Accepted Versions run on all 30 Promotion tasks.</span></div>
+            <div class="node"><b>7 · Evaluate</b><span>The frozen winner runs C0–C3 once with writes off.</span></div>
           </div>
-          <div class="loop">COLLECT → CONSOLIDATE → SCREEN → FREEZE → COMPARE → ACCEPT OR REJECT → REPEAT</div>
+          <div class="loop">CALIBRATE AND FREEZE KAPPA → COLLECT BATCH → FREEZE SNAPSHOT → CONSOLIDATE → SCREEN → COMPARE → ACCEPT OR REJECT → FINAL C0–C3</div>
           <div class="callout good"><strong>Execution Boundary</strong>Every <code>run_python</code> action executes inside OpenShell under a NemoClaw-managed sandbox. Network is denied and filesystem access is scoped.</div>
         </section>
 
@@ -200,7 +202,7 @@
             <thead><tr><th>Record</th><th>Who writes</th><th>Who reads</th><th>Mutation rule</th></tr></thead>
             <tbody>
               <tr><td>Reviewed Episode</td><td>Collector</td><td>Consolidator, visualizer</td><td>Append-only</td></tr>
-              <tr><td>Candidate Behavior Card</td><td>Consolidator</td><td>Screening and promotion runs</td><td>Immutable after freeze</td></tr>
+              <tr><td>Candidate Behavior Card</td><td>Consolidator proposes; validator admits</td><td>Screening and promotion runs</td><td>Immutable after freeze; lifecycle operations are deltas</td></tr>
               <tr><td>Accepted Version</td><td>Promotion Gate</td><td>Student retriever</td><td>Pointer advances or remains</td></tr>
               <tr><td>Experiment Trace</td><td>Orchestrator</td><td>Metrics, debugger, replay</td><td>Never agent context</td></tr>
             </tbody>
@@ -212,12 +214,13 @@
           <div class="tag">07 · Task suite</div>
           <h2>ChartQA is required. MathVista is stretch-only.</h2>
           <p class="lead">ChartQA supplies chart images, human-authored questions, known answers, and official relaxed-accuracy logic. Deterministic manifests prevent membership drift.</p>
-          <div class="grid3">
-            <article class="card tint"><h3>Collection Set</h3><p><strong>Minimum 40.</strong> Reviewer-guided episodes may generate Candidate Versions.</p></article>
-            <article class="card tint"><h3>Promotion Set</h3><p><strong>Minimum 30.</strong> Validation items accept or reject candidates and never produce memories.</p></article>
-            <article class="card tint"><h3>Final Held-Out Set</h3><p><strong>Minimum 60.</strong> Untouched items run once after the final Accepted Version is frozen.</p></article>
+          <div class="grid4">
+            <article class="card tint"><h3>Harness Calibration Set</h3><p><strong>Exactly 16.</strong> Eight discovery and eight regression items derive H-star and Kappa; they never create Behavior Cards.</p></article>
+            <article class="card tint"><h3>Collection Set</h3><p><strong>Exactly 40.</strong> Reviewer-guided episodes may generate one Candidate Version.</p></article>
+            <article class="card tint"><h3>Promotion Set</h3><p><strong>Exactly 30.</strong> Validation items accept or reject the candidate and never produce memories.</p></article>
+            <article class="card tint"><h3>Final Held-Out Set</h3><p><strong>Exactly 60.</strong> Untouched items run once after the final Accepted Version is frozen.</p></article>
           </div>
-          <div class="callout good"><strong>Scale target</strong>If quotas and runtime permit, scale from 40 / 30 / 60 toward 80 / 50 / 100 without changing task membership, split rules, prompts, or thresholds.</div>
+          <div class="callout good"><strong>Primary manifest is fixed</strong>The required run remains 16 / 40 / 30 / 60. Any larger post-hackathon study uses newly declared manifests and cannot replace or retroactively alter the primary evidence.</div>
           <div class="callout"><strong>Manifest rule</strong>Use deterministic hashes, stratify by question and operation type, and assert zero task or image overlap. The final manifest is inaccessible to collection and promotion code.</div>
           <p class="fine"><a href="https://github.com/vis-nlp/ChartQA">ChartQA dataset and evaluator</a> · <a href="https://huggingface.co/datasets/AI4Math/MathVista">MathVista stretch dataset</a></p>
         </section>
@@ -229,8 +232,9 @@
             <article class="card"><h3>C0 · Minimal baseline</h3><p>Student, minimal harness, no Reviewer, no memory. This establishes the floor.</p></article>
             <article class="card"><h3>C1 · Reviewer-guided ceiling</h3><p>Reviewer checks every Student action. This estimates transferable benefit and online supervision cost.</p></article>
             <article class="card"><h3>C2 · Accepted Version</h3><p>Fresh Student, accepted Behavior Cards, Reviewer off, writes off. This is the primary result.</p></article>
-            <article class="card"><h3>C3 · Shuffled memory</h3><p>Same card count and token budget as C2, but irrelevant cards. This tests whether relevance—not extra context—causes gains.</p></article>
+            <article class="card"><h3>C3 · Irrelevant memory</h3><p>Reviewer off. A predeclared donor pool supplies trigger-mismatched accepted cards, matching C2 card count exactly and token count within 10%.</p></article>
           </div>
+          <div class="callout"><strong>C3 freeze rule</strong>Freeze the accepted-card donor pool, trigger-mismatch rule, count and token tolerances, and seed <code>20261016</code> before final access. After loading answer-free final task inputs, materialize assignments deterministically before any condition executes or scoring reference is loaded. Report C3 unavailable when no honest match exists and disclose the eligible paired population. If empty Accepted v000 remains active, C2 collapses to no-memory behavior and C3 is unavailable; this is a degenerate negative result, not evidence for relevance.</div>
           <h3 style="margin-top:22px">Promotion Gate</h3>
           <div class="table"><table>
             <thead><tr><th>Gate</th><th>Starting threshold</th><th>Failure action</th></tr></thead>
@@ -264,11 +268,11 @@
           <h2>Every named integration owns a necessary boundary.</h2>
           <div class="grid2">
             <article class="card"><div class="tag">Crusoe</div><h3>Inference plane</h3><p>All Student, Reviewer, and Consolidator inference uses Managed Inference. The adapter records endpoint, latency, tokens, retries, and errors.</p></article>
-            <article class="card"><div class="tag">NVIDIA Nemotron</div><h3>Privileged Reviewer</h3><p>The required multimodal Reviewer sees the image, state, proposed action, and private visual-reasoning rubric during collection only.</p></article>
+            <article class="card"><div class="tag">NVIDIA Nemotron</div><h3>Privileged Reviewer</h3><p>The required multimodal Reviewer sees the image, state, proposed action, and frozen Kappa Guidance during calibration, measured Collection, and C1 only.</p></article>
             <article class="card"><div class="tag">MemMachine</div><h3>Operational memory</h3><p>Managed MemMachine stores every Reviewed Episode, Behavior Card, version manifest, and accepted-version pointer used by agents.</p></article>
             <article class="card"><div class="tag">NemoClaw + OpenShell</div><h3>Execution Boundary</h3><p>NemoClaw manages the sandbox. OpenShell executes generated Python with explicit time, network, filesystem, and resource policy.</p></article>
           </div>
-          <div class="callout risk"><strong>Phase-zero stop condition</strong>Do not build orchestration until one multimodal Crusoe request, one Nemotron review, one MemMachine add/search, and one OpenShell execution succeed.</div>
+          <div class="callout risk"><strong>Live execution gate</strong>Offline schemas, pure logic, fake adapters, synthetic lifecycle tests, and replay UI may be built before credits arrive. Production composition, managed writes, paid calls, and measured orchestration remain blocked until the Student, Nemotron Reviewer, Consolidator, MemMachine, and OpenShell seams each pass direct contract evidence. Configuration alone is not evidence.</div>
         </section>
 
         <section id="exclusions">
@@ -283,6 +287,7 @@
               <tr><td class="forbidden">Human card curation</td><td>Would hide the actual improvement mechanism</td><td>Inspection only</td></tr>
               <tr><td class="forbidden">MathVista requirement</td><td>Expands integration and evaluation risk</td><td>Stretch generalization test</td></tr>
               <tr><td class="forbidden">LoRA or SFT</td><td>Displaces the core memory experiment</td><td>Post-hackathon comparison</td></tr>
+              <tr><td class="forbidden">Harness-Zero runtime stack</td><td>Harbor, DeepAgents, benchmark banks, and single-<code>execute</code> assumptions conflict with the fixed ChartQA boundaries</td><td>Pinned, attributed contract-level reuse only</td></tr>
             </tbody>
           </table></div>
         </section>
@@ -320,10 +325,10 @@
           <div class="tag">14 · 30–40 hour plan</div>
           <h2>Build the proof in dependency order.</h2>
           <div class="timeline">
-            <div class="step"><b>Hours 0–4 · Prove access</b><span>Verify Crusoe models, Nemotron vision, managed MemMachine, and NemoClaw/OpenShell.</span></div>
-            <div class="step"><b>Hours 4–8 · Freeze data</b><span>Create manifests, test official scoring, validate images, and assert split isolation.</span></div>
-            <div class="step"><b>Hours 8–14 · Minimal harness</b><span>Implement typed actions, OpenShell execution, termination rules, telemetry, and baseline probe.</span></div>
-            <div class="step"><b>Hours 14–20 · Review and persist</b><span>Add PASS/REPLACE, validate action outcomes, and write Reviewed Episodes to MemMachine.</span></div>
+            <div class="step"><b>Hours 0–4 · Freeze contracts and data</b><span>Reconcile roles, create manifests, test official scoring, validate images, and assert split isolation.</span></div>
+            <div class="step"><b>Hours 4–10 · Offline vertical slice</b><span>Implement typed actions, deterministic adapters, lifecycle rules, telemetry, and one synthetic baseline.</span></div>
+            <div class="step"><b>Hours 10–14 · Prove live seams</b><span>Verify Crusoe roles, Nemotron vision, managed MemMachine, and NemoClaw/OpenShell before production composition.</span></div>
+            <div class="step"><b>Hours 14–20 · Calibrate, review, and persist</b><span>Freeze H-star/Kappa, add PASS/REPLACE, validate outcomes, and write Reviewed Episodes.</span></div>
             <div class="step"><b>Hours 20–25 · Version lifecycle</b><span>Consolidate, screen, freeze, compare, and accept or reject the first Candidate Version.</span></div>
             <div class="step"><b>Hours 25–31 · Required evaluation</b><span>Run C0–C3, export paired metrics, inspect leakage, and freeze claims.</span></div>
             <div class="step"><b>Hours 31–36 · Visual proof</b><span>Wire the React visualizer, sanitize one replay, and display version history.</span></div>
@@ -363,7 +368,7 @@
             <article class="card"><h3>Forbidden card content</h3><p>Task IDs, image IDs, copied questions, answer options, final answers, raw chart values, and evaluation-set provenance.</p><p>Any match rejects the entire candidate batch before promotion.</p></article>
           </div>
           <h3 style="margin-top:22px">State transitions</h3>
-          <div class="loop">EMPTY → COLLECTING → CONSOLIDATING → SCREENED → CANDIDATE_FROZEN → PROMOTING → ACCEPTED | REJECTED → FINAL_FROZEN</div>
+          <div class="loop">ACCEPTED_V000 → KAPPA_FROZEN → COLLECTING → EPISODE_SNAPSHOT_FROZEN → CONSOLIDATING → CANDIDATE_FROZEN → PROMOTING → ACCEPTED | REJECTED → FINAL_FROZEN</div>
           <div class="callout"><strong>Access checks, not design questions</strong>Exact Crusoe endpoint IDs, quotas, image payloads, and MemMachine record APIs are recorded during phase zero. The adapters absorb those values without changing the experiment.</div>
         </section>
 
@@ -373,6 +378,7 @@
           <ul class="sources">
             <li><a href="./DETAILS.md">Recursive Agents Hackathon details</a></li>
             <li><a href="https://arxiv.org/abs/2609.24974v1">Harness-Zero: Harness Distillation via Agent-as-Harness</a></li>
+            <li><a href="https://github.com/metaevo-ai/harness-zero/tree/a4a6223241479c750fdab827c3a449bb1d41b99a">Pinned Harness-Zero source reviewed for selective reuse</a></li>
             <li><a href="https://github.com/vis-nlp/ChartQA">ChartQA repository and official evaluation</a></li>
             <li><a href="https://huggingface.co/datasets/AI4Math/MathVista">MathVista dataset for stretch evaluation</a></li>
             <li><a href="https://github.com/MemMachine/MemMachine">MemMachine repository and SDK</a></li>
@@ -380,7 +386,7 @@
             <li><a href="https://docs.nvidia.com/nemoclaw/user-guide/openclaw/reference/cli-selection-guide">NemoClaw and OpenShell CLI guidance</a></li>
             <li><a href="https://github.com/youdotcom-oss/agent-skills">You.com agent skills evaluated and excluded from runtime</a></li>
             <li><a href="../CONTEXT.md">Canonical project language</a></li>
-            <li><a href="./adr/0001-chartqa-as-primary-benchmark.md">Recorded architectural decisions</a></li>
+            <li><a href="./adr/0001-chartqa-as-primary-benchmark.md">Recorded architectural decisions</a>, including the <a href="./adr/0009-freeze-chartqa-kappa-before-collection.md">Kappa freeze</a>, <a href="./adr/0010-use-one-batched-lifecycle-for-the-primary-experiment.md">batched lifecycle</a>, and <a href="./adr/0011-allow-offline-core-before-live-provider-gates.md">offline-core exception</a></li>
           </ul>
           <p class="fine">Research and planning snapshot: 16 October 2026. Account-specific product availability must be verified before implementation.</p>
         </section>
