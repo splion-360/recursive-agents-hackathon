@@ -1,3 +1,5 @@
 # Freeze ChartQA Kappa Guidance before measured Collection
 
+Status: Superseded by [ADR 0012](./0012-use-three-round-hstar-evolution.md).
+
 H-star evolution and Kappa adaptation will use only the fixed, disjoint Harness Calibration Set. Eight discovery items may inform one bounded H-star revision; a separate eight-item regression subset accepts or rejects it. The accepted H-star is then adapted into answer-free Kappa Guidance that uses only actions available in the Minimal Harness (H). The same regression subset validates Kappa action compatibility and leakage without permitting another revision, after which both artifacts are canonically hashed and frozen before measured Collection. Calibration produces no Reviewed Episodes eligible for consolidation and no Behavior Cards. The Reviewer is the required Nemotron multimodal role and consumes Kappa Guidance; Kappa is not a separate model. An optional H-star Analysis Model may propose the revision, but its endpoint is configuration discovered at the live-provider gate and deterministic regression evidence remains authoritative.

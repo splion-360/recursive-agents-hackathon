@@ -40,8 +40,8 @@ class CalibrationStatus(BaseModel):
         "complete",
         "failed",
     ] = "waiting"
-    discovery_completed: int = Field(default=0, ge=0, le=8)
-    regression_completed: int = Field(default=0, ge=0, le=8)
+    discovery_completed: int = Field(default=0, ge=0, le=12)
+    regression_completed: int = Field(default=0, ge=0, le=12)
     smoke_completed: int = Field(default=0, ge=0, le=5)
     smoke_total: int = Field(default=0, ge=0, le=5)
     current_task_id: str | None = None
@@ -84,6 +84,36 @@ class ModelRoster(BaseModel):
     hstar: str | None
 
 
+class CalibrationTaskSummary(BaseModel):
+    """Answer-free calibration membership used to label dashboard traces."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    phase: Literal["discovery", "regression"]
+
+
+class SplitTotals(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    discovery: int
+    regression: int
+
+
+class HarnessDefinition(BaseModel):
+    """Sanitized executable contract for one calibration participant."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    role: Literal["student", "reviewer", "hstar", "kappa"]
+    model_id: str | None
+    purpose: str
+    sees: tuple[str, ...]
+    actions: tuple[str, ...]
+    guidance: tuple[str, ...] = ()
+    revisions: tuple[str, ...] = ()
+
+
 class DashboardSnapshot(BaseModel):
     """Single truthful snapshot used to hydrate the experiment dashboard."""
 
@@ -99,7 +129,10 @@ class DashboardSnapshot(BaseModel):
     integrations: tuple[IntegrationStatus, ...]
     models: ModelRoster
     event_count: int
-    recent_events: tuple[RunEvent, ...]
+    split_totals: SplitTotals
+    harnesses: tuple[HarnessDefinition, ...]
+    calibration_tasks: tuple[CalibrationTaskSummary, ...]
+    run_events: tuple[RunEvent, ...]
 
 
 class CalibrationTaskDetail(BaseModel):
@@ -115,19 +148,22 @@ def load_dashboard_snapshot(settings: Settings) -> DashboardSnapshot:
     """Load only public local artifacts; malformed artifacts fail closed."""
 
     events = read_run_events(CALIBRATION_EVENTS_PATH)
+    _, _, task_phases = _calibration_source()
+    manifests = tuple(
+        _load_manifest(name)
+        for name in (
+            "calibration_discovery",
+            "calibration_regression",
+            "collection",
+            "promotion",
+            "final",
+        )
+    )
+    totals = {manifest.name: manifest.task_count for manifest in manifests}
     return DashboardSnapshot(
         generated_at=datetime.now(UTC),
         calibration=_load_calibration_status(),
-        manifests=tuple(
-            _load_manifest(name)
-            for name in (
-                "calibration_discovery",
-                "calibration_regression",
-                "collection",
-                "promotion",
-                "final",
-            )
-        ),
+        manifests=manifests,
         integrations=_integration_statuses(settings),
         models=ModelRoster(
             student=settings.crusoe_student_model,
@@ -136,7 +172,16 @@ def load_dashboard_snapshot(settings: Settings) -> DashboardSnapshot:
             hstar=settings.crusoe_hstar_model,
         ),
         event_count=len(events),
-        recent_events=events[-40:],
+        split_totals=SplitTotals(
+            discovery=totals["calibration_discovery"],
+            regression=totals["calibration_regression"],
+        ),
+        harnesses=_harness_definitions(settings),
+        calibration_tasks=tuple(
+            CalibrationTaskSummary(task_id=task_id, phase=phase)
+            for task_id, phase in task_phases.items()
+        ),
+        run_events=events,
     )
 
 
@@ -173,7 +218,7 @@ def write_calibration_status(status: CalibrationStatus) -> None:
 def load_calibration_task_asset(task_id: str) -> TaskAsset:
     """Load an answer-free image only when it belongs to a calibration manifest."""
 
-    benchmark, _ = _calibration_source()
+    benchmark, _, _ = _calibration_source()
     task = load_calibration_task(task_id)
     return benchmark.load_asset(task)
 
@@ -181,7 +226,7 @@ def load_calibration_task_asset(task_id: str) -> TaskAsset:
 def load_calibration_task(task_id: str) -> TaskInput:
     """Load answer-free context only for a task in the calibration manifests."""
 
-    _, tasks = _calibration_source()
+    _, tasks, _ = _calibration_source()
     try:
         return tasks[task_id]
     except KeyError as error:
@@ -189,11 +234,19 @@ def load_calibration_task(task_id: str) -> TaskInput:
 
 
 @lru_cache(maxsize=1)
-def _calibration_source() -> tuple[DevelopmentBenchmark, dict[str, TaskInput]]:
+def _calibration_source() -> tuple[
+    DevelopmentBenchmark,
+    dict[str, TaskInput],
+    dict[str, Literal["discovery", "regression"]],
+]:
     benchmark = DevelopmentBenchmark(dataset_root=_DATASET_ROOT, manifest_dir=_MANIFEST_DIR)
     calibration = benchmark.load_calibration()
     tasks = {task.task_id: task for task in (*calibration.discovery, *calibration.regression)}
-    return benchmark, tasks
+    phases: dict[str, Literal["discovery", "regression"]] = {
+        task.task_id: "discovery" for task in calibration.discovery
+    }
+    phases.update({task.task_id: "regression" for task in calibration.regression})
+    return benchmark, tasks, phases
 
 
 def _load_calibration_status() -> CalibrationStatus:
@@ -209,6 +262,61 @@ def _load_manifest(name: str) -> ManifestSummary:
         task_count=len(payload["entries"]),
         content_sha256=payload["content_sha256"],
     )
+
+
+def _harness_definitions(settings: Settings) -> tuple[HarnessDefinition, ...]:
+    guidance, revisions = _calibration_rule_summary()
+    return (
+        HarnessDefinition(
+            role="student",
+            model_id=settings.crusoe_student_model,
+            purpose="Solve the ChartQA task through a bounded typed action loop.",
+            sees=("question", "chart image", "public tool observations"),
+            actions=("inspect_image", "crop", "run_python", "final_answer"),
+        ),
+        HarnessDefinition(
+            role="reviewer",
+            model_id=settings.crusoe_reviewer_model,
+            purpose="Privately PASS a sound action or REPLACE it with the smallest valid action.",
+            sees=("Student proposal", "chart image", "observations", "frozen Kappa"),
+            actions=("pass", "replace with inspect_image/crop/run_python"),
+            guidance=("Never replace final_answer directly with another final_answer.",),
+        ),
+        HarnessDefinition(
+            role="hstar",
+            model_id=settings.crusoe_hstar_model,
+            purpose="Evolve answer-free review guidance over three four-task Discovery rounds.",
+            sees=("Discovery outcomes", "action types", "prior H-star revision"),
+            actions=("propose full next harness revision",),
+            revisions=revisions,
+        ),
+        HarnessDefinition(
+            role="kappa",
+            model_id=settings.crusoe_reviewer_model,
+            purpose="Frozen regression-screened guidance used only by the private Reviewer.",
+            sees=("accepted H-star components", "12-task Regression evidence"),
+            actions=("constrain Reviewer PASS/REPLACE decisions",),
+            guidance=guidance,
+        ),
+    )
+
+
+def _calibration_rule_summary() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    report_path = CALIBRATION_ARTIFACT_DIR / "report.json"
+    if not report_path.exists():
+        return (), ()
+    payload = json.loads(report_path.read_text())
+    guidance = tuple(str(item) for item in payload.get("kappa", {}).get("guidance", ()))
+    revision_items = payload.get("hstar_revisions", ())
+    revisions = tuple(
+        f"R{item['round_index']}: "
+        + " | ".join(rule["instruction"] for rule in item["proposal"].get("rules", ()))
+        for item in revision_items
+    )
+    if not revisions and payload.get("proposal"):
+        rules = payload["proposal"].get("rules", ())
+        revisions = tuple(f"Final: {rule['instruction']}" for rule in rules)
+    return guidance, revisions
 
 
 def _integration_statuses(settings: Settings) -> tuple[IntegrationStatus, ...]:

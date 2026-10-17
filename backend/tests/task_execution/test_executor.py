@@ -36,8 +36,8 @@ def _kappa(instruction: str = "Prefer exact arithmetic.") -> KappaArtifact:
     )
     evidence = RuleEvidence(
         rule_id=rule.rule_id,
-        discovery_task_ids=tuple(f"d-{index}" for index in range(8)),
-        regression_task_ids=tuple(f"r-{index}" for index in range(8)),
+        discovery_task_ids=tuple(f"d-{index}" for index in range(12)),
+        regression_task_ids=tuple(f"r-{index}" for index in range(12)),
         discovery_helped=1,
         regression_helped=1,
         regression_harmed=0,

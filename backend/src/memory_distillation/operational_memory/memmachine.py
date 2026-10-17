@@ -83,15 +83,29 @@ class _AcceptedPointer(BaseModel):
     revision: Literal[0] = 0
 
 
+class _AcceptedTransition(BaseModel):
+    """One immutable single-writer Accepted Version transition."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["accepted-transition.v1"] = "accepted-transition.v1"
+    expected_version_id: str
+    expected_content_hash: str
+    replacement_version_id: str
+    replacement_content_hash: str
+
+
 class MemMachineOperationalMemory:
     """Store typed immutable records in one managed MemMachine project.
 
-    MemMachine's public API has no conditional update operation. Consequently,
-    this adapter persists the bootstrap Accepted Version pointer but refuses a
-    promotion update rather than presenting a non-atomic append as compare-and-set.
+    MemMachine's public API has no conditional update operation. Promotion is
+    therefore represented as one immutable transition per expected version.
+    Competing transitions produce a duplicate immutable identity and fail
+    closed. The measured lifecycle enforces a single writer.
     """
 
     atomic_pointer_updates_supported = False
+    single_writer_transitions_supported = True
 
     def __init__(
         self,
@@ -240,16 +254,44 @@ class MemMachineOperationalMemory:
         view = self.get_view(pointer.version_id)
         if view.content_hash != pointer.version_content_hash:
             raise MemMachineError("Accepted Version pointer content hash does not match")
-        return pointer.version_id
+        accepted = pointer.version_id
+        transitions = self._load_records("accepted_transition", _AcceptedTransition)
+        by_expected: dict[str, _AcceptedTransition] = {}
+        for transition in transitions:
+            previous = by_expected.setdefault(transition.expected_version_id, transition)
+            if previous != transition:
+                raise MemMachineError("Accepted Version transition is ambiguous")
+        visited: set[str] = set()
+        while next_transition := by_expected.get(accepted):
+            if accepted in visited:
+                raise MemMachineError("Accepted Version transition cycle detected")
+            visited.add(accepted)
+            expected_view = self.get_view(next_transition.expected_version_id)
+            replacement_view = self.get_view(next_transition.replacement_version_id)
+            if (
+                expected_view.content_hash != next_transition.expected_content_hash
+                or replacement_view.content_hash != next_transition.replacement_content_hash
+            ):
+                raise MemMachineError("Accepted Version transition content hash does not match")
+            accepted = next_transition.replacement_version_id
+        return accepted
 
     def compare_and_set_accepted(self, *, expected: str, replacement: str) -> bool:
         if self.accepted_version_id != expected:
             return False
-        self.get_view(replacement)
-        raise MemMachineAtomicityError(
-            "MemMachine public API has no conditional update primitive; "
-            "refusing a non-atomic Accepted Version pointer change"
+        expected_view = self.get_view(expected)
+        replacement_view = self.get_view(replacement)
+        self._put_immutable(
+            record_type="accepted_transition",
+            record_id=expected,
+            record=_AcceptedTransition(
+                expected_version_id=expected,
+                expected_content_hash=expected_view.content_hash,
+                replacement_version_id=replacement,
+                replacement_content_hash=replacement_view.content_hash,
+            ),
         )
+        return self.accepted_version_id == replacement
 
     def _put_immutable(
         self,

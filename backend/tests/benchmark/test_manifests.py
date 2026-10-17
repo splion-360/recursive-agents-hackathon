@@ -20,8 +20,8 @@ from memory_distillation.benchmark.manifests import (
 )
 
 EXPECTED_SIZES = {
-    "calibration_discovery": 8,
-    "calibration_regression": 8,
+    "calibration_discovery": 12,
+    "calibration_regression": 12,
     "collection": 40,
     "promotion": 30,
     "final": 60,
@@ -101,8 +101,8 @@ def test_development_benchmark_loads_answer_free_tasks_and_scores_privately(
     collection = benchmark.load_collection()
     promotion = benchmark.load_promotion()
 
-    assert len(calibration.discovery) == 8
-    assert len(calibration.regression) == 8
+    assert len(calibration.discovery) == 12
+    assert len(calibration.regression) == 12
     assert len(collection) == 40
     assert len(promotion) == 30
     task = collection[0]

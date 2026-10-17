@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from hashlib import sha256
 from statistics import median
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -168,9 +168,22 @@ class VersionRegistry:
         return True
 
 
+class PromotionRegistry(Protocol):
+    """Version operations required by paired promotion."""
+
+    @property
+    def accepted_version_id(self) -> str: ...
+
+    def get_view(self, version_id: str) -> VersionView: ...
+
+    def freeze_candidate(self, candidate: CandidateVersion) -> VersionView: ...
+
+    def compare_and_set_accepted(self, *, expected: str, replacement: str) -> bool: ...
+
+
 def decide_promotion(
     *,
-    registry: VersionRegistry,
+    registry: PromotionRegistry,
     candidate: CandidateVersion,
     plan: PromotionPlan,
     outcomes: tuple[PairedOutcome, ...],
@@ -261,7 +274,7 @@ def run_paired_promotion(
     executor: TaskExecutor,
     plan: PromotionPlan,
     tasks: tuple[PromotionTask, ...],
-    registry: VersionRegistry,
+    registry: PromotionRegistry,
     candidate: CandidateVersion,
     execution_policy: ExecutionPolicy,
 ) -> tuple[PairedOutcome, ...]:

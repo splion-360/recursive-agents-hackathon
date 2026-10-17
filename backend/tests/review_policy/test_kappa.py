@@ -42,8 +42,8 @@ def _rehash_artifact(
 def _split() -> CalibrationSplit:
     return CalibrationSplit(
         manifest_hash="calibration-hash",
-        discovery_task_ids=tuple(f"d{index}" for index in range(8)),
-        regression_task_ids=tuple(f"r{index}" for index in range(8)),
+        discovery_task_ids=tuple(f"d{index}" for index in range(12)),
+        regression_task_ids=tuple(f"r{index}" for index in range(12)),
     )
 
 
@@ -181,7 +181,7 @@ def test_minimal_kappa_records_an_explicit_revision_zero_fallback() -> None:
         {"action_compatible": False},
         {"discovery_helped": 0},
         {"regression_helped": 0, "regression_harmed": 0},
-        {"discovery_task_ids": tuple(f"d{index}" for index in range(7))},
+        {"discovery_task_ids": tuple(f"d{index}" for index in range(11))},
     ],
 )
 def test_kappa_artifact_revalidates_accepted_rule_evidence(
@@ -247,7 +247,7 @@ def test_kappa_artifact_requires_one_evidence_record_per_accepted_rule() -> None
 
 
 def test_calibration_isolation_evidence_and_privacy_fail_closed() -> None:
-    with pytest.raises(ValidationError, match="exactly eight"):
+    with pytest.raises(ValidationError, match="exactly twelve"):
         CalibrationSplit(
             manifest_hash="hash", discovery_task_ids=("same",), regression_task_ids=("same",)
         )

@@ -50,8 +50,8 @@ All manifests are deterministic, hashed, disjoint by task and image, and fixed b
 
 | Manifest | Size | Permitted influence | Memory writes |
 | --- | ---: | --- | --- |
-| Harness Calibration: discovery | 8 | One bounded H-star proposal | None |
-| Harness Calibration: regression | 8 | Accept or reject H-star, then validate the adapted Kappa without another revision | None |
+| Harness Calibration: discovery | 12 | Three ordered four-task H-star revisions | None |
+| Harness Calibration: regression | 12 | Accept or reject the frozen final H-star, then validate adapted Kappa without another revision | None |
 | Collection | 40 | Reviewed Episodes and Candidate Version evidence | Reviewed Episodes only |
 | Promotion | 30 | Candidate-versus-Accepted gate | None |
 | Final Held-Out | 60 | One C0-C3 report after freeze | None |
@@ -60,9 +60,9 @@ The Student, Reviewer, retriever, sandbox, and model adapters receive answer-fre
 
 ## Phase A: derive and freeze H-star and Kappa Guidance
 
-1. Run H on the eight discovery items and record failures without creating operational memory.
-2. The optional H-star Analysis Model may propose one bounded revision focused on repeated failure families.
-3. Evaluate H and the proposed H-star on the separate eight-item regression subset. Accept only measured improvement without leakage or invalid actions.
+1. Run H over twelve discovery items in three ordered rounds of four and record failures without creating operational memory.
+2. After each round, the H-star Analysis Model proposes a full answer-free revision using cumulative Discovery evidence and the prior revision.
+3. Evaluate H and the frozen third H-star revision on the separate twelve-item regression subset. Accept only measured improvement without leakage or invalid actions.
 4. Adapt every accepted H-star component explicitly:
    - tools become H-executable action recipes;
    - middleware becomes review-time evidence checks;
@@ -104,7 +104,7 @@ Run the Accepted Version and Candidate Version on the same 30 Promotion tasks wi
 
 The deterministic Promotion Gate applies the predeclared capability, Negative Transfer, latency, token, validity, and contamination thresholds. A passing candidate advances the Accepted Version pointer atomically. A rejected candidate remains immutable for audit and the pointer stays unchanged. Humans may repair infrastructure and rerun only under a predeclared retry policy; they may not edit cards, thresholds, or results.
 
-**Current live gate:** the managed MemMachine public API verified on October 17, 2026 does not expose a conditional update primitive. The adapter stores and retrieves the immutable bootstrap pointer but refuses promotion updates rather than approximating compare-and-set with a non-atomic append. Measured promotion remains blocked until an approved atomic MemMachine mechanism is available.
+**Current live gate:** the managed MemMachine public API verified on October 17, 2026 does not expose a conditional update primitive. The one-shot measured lifecycle therefore permits exactly one promotion writer and records an immutable transition keyed by the expected Accepted Version. It re-reads and validates the transition and fails closed on stale, duplicate, ambiguous, cyclic, or conflicting state. This is an explicitly bounded single-writer guarantee, not native compare-and-set; concurrent promotion writers remain unsupported.
 
 Accepted v000 is the immutable empty initial version, so a rejected first candidate is representable without fabricating progress.
 

@@ -43,7 +43,7 @@ The frozen, answer-free private review artifact adapted from accepted H-star com
 _Avoid_: Kappa model, mutable reviewer prompt
 
 **Harness Calibration Set**:
-A fixed 16-item ChartQA manifest disjoint by task and image from Collection, Promotion, and Final Held-Out Sets. Eight discovery items may inform one H-star proposal; a separate eight-item regression subset accepts or rejects it without producing Behavior Cards.
+A fixed 24-item ChartQA manifest disjoint by task and image from Collection, Promotion, and Final Held-Out Sets. Twelve discovery items drive three ordered four-task H-star revisions; a separate twelve-item regression subset accepts or rejects the frozen final revision without producing Behavior Cards.
 _Avoid_: Collection Set, Promotion Set
 
 **Lifecycle Pass**:

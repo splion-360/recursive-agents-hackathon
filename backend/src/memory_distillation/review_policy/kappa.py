@@ -18,11 +18,11 @@ class CalibrationSplit(BaseModel):
 
     @model_validator(mode="after")
     def require_isolation(self) -> "CalibrationSplit":
-        if len(self.discovery_task_ids) != 8 or len(self.regression_task_ids) != 8:
+        if len(self.discovery_task_ids) != 12 or len(self.regression_task_ids) != 12:
             raise ValueError(
-                "calibration requires exactly eight discovery and eight regression tasks"
+                "calibration requires exactly twelve discovery and twelve regression tasks"
             )
-        if len(set(self.discovery_task_ids)) != 8 or len(set(self.regression_task_ids)) != 8:
+        if len(set(self.discovery_task_ids)) != 12 or len(set(self.regression_task_ids)) != 12:
             raise ValueError("calibration task identifiers must be unique")
         if set(self.discovery_task_ids) & set(self.regression_task_ids):
             raise ValueError("discovery and regression tasks overlap")
@@ -44,8 +44,8 @@ class HStarProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     proposal_id: str
-    parent_revision: Literal[0] = 0
-    revision: Literal[1] = 1
+    parent_revision: Literal[0, 1, 2] = 0
+    revision: Literal[1, 2, 3] = 1
     rules: tuple[KappaRule, ...] = Field(min_length=1, max_length=8)
     discovery_task_ids: tuple[str, ...]
 
@@ -97,7 +97,7 @@ class KappaArtifact(BaseModel):
     schema_version: Literal["kappa.v1"] = "kappa.v1"
     artifact_id: str
     manifest_hash: str
-    revision: Literal[0, 1]
+    revision: Literal[0, 1, 2, 3]
     rules: tuple[KappaRule, ...]
     guidance: tuple[str, ...]
     evidence: tuple[RuleEvidence, ...]
@@ -117,13 +117,13 @@ class KappaArtifact(BaseModel):
             if evidence is None:
                 raise ValueError("every accepted Kappa rule requires evidence")
             if (
-                len(evidence.discovery_task_ids) != 8
-                or len(set(evidence.discovery_task_ids)) != 8
-                or len(evidence.regression_task_ids) != 8
-                or len(set(evidence.regression_task_ids)) != 8
+                len(evidence.discovery_task_ids) != 12
+                or len(set(evidence.discovery_task_ids)) != 12
+                or len(evidence.regression_task_ids) != 12
+                or len(set(evidence.regression_task_ids)) != 12
                 or set(evidence.discovery_task_ids) & set(evidence.regression_task_ids)
             ):
-                raise ValueError("accepted Kappa rule evidence requires isolated 8+8 tasks")
+                raise ValueError("accepted Kappa rule evidence requires isolated 12+12 tasks")
             if (
                 not evidence.action_compatible
                 or evidence.discovery_helped <= 0
@@ -298,7 +298,7 @@ def _derive_evidence(
             raise ValueError("rule executions do not cover the discovery split")
         if {item.task_id for item in regression} != set(split.regression_task_ids):
             raise ValueError("rule executions do not cover the regression split")
-        if len(discovery) != 8 or len(regression) != 8:
+        if len(discovery) != 12 or len(regression) != 12:
             raise ValueError("every calibration task must execute exactly once per rule")
         compatible = all(
             set(item.action_types).issubset(rule.action_types) for item in rule_runs

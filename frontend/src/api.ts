@@ -70,7 +70,21 @@ export type DashboardSnapshot = {
     hstar: string | null;
   };
   event_count: number;
-  recent_events: RunEvent[];
+  split_totals: { discovery: number; regression: number };
+  harnesses: Array<{
+    role: "student" | "reviewer" | "hstar" | "kappa";
+    model_id: string | null;
+    purpose: string;
+    sees: string[];
+    actions: string[];
+    guidance: string[];
+    revisions: string[];
+  }>;
+  calibration_tasks: Array<{
+    task_id: string;
+    phase: "discovery" | "regression";
+  }>;
+  run_events: RunEvent[];
 };
 
 export type CalibrationTaskDetail = {

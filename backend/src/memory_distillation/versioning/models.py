@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -24,6 +25,18 @@ class CardOperation(BaseModel):
     trigger: str | None = None
     instruction: str | None = None
     evidence_episode_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ConsolidationBatch:
+    """One provider result before deterministic candidate screening."""
+
+    operations: tuple[CardOperation, ...]
+    model_id: str
+    request_id: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
 
 
 class EpisodeSnapshot(BaseModel):

@@ -29,8 +29,8 @@ CHARTQA_REPOSITORY: Literal["https://github.com/vis-nlp/ChartQA"] = (
 )
 CHARTQA_REVIEWED_REVISION = "044eabfc306abfe9340c5741f0093aefc5973d06"
 MANIFEST_REQUIREMENTS: dict[ManifestName, tuple[SourceSplit, int]] = {
-    "calibration_discovery": ("train", 8),
-    "calibration_regression": ("train", 8),
+    "calibration_discovery": ("train", 12),
+    "calibration_regression": ("train", 12),
     "collection": ("train", 40),
     "promotion": ("val", 30),
     "final": ("test", 60),
@@ -141,7 +141,7 @@ def build_default_manifests(
     dataset_revision: str,
     seed: int,
 ) -> dict[ManifestName, ExperimentManifest]:
-    """Build the fixed 8/8/40/30/60 split with task and image isolation."""
+    """Build the fixed 12/12/40/30/60 split with task and image isolation."""
 
     _require_unique_task_ids(records)
     source_records = {
@@ -156,8 +156,8 @@ def build_default_manifests(
     selected: dict[ManifestName, list[ChartQARecord]] = {}
     train_pool = pools["train"]
     development_specs: tuple[tuple[ManifestName, int], ...] = (
-        ("calibration_discovery", 8),
-        ("calibration_regression", 8),
+        ("calibration_discovery", 12),
+        ("calibration_regression", 12),
         ("collection", 40),
     )
     for name, size in development_specs:

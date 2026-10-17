@@ -161,7 +161,7 @@
             <article class="card tint"><h3>Consolidator</h3><p>An available Crusoe text model selected for schema reliability. It converts repeated corrections into candidate procedures.</p></article>
             <article class="card"><h3>Promotion Gate</h3><p>Deterministic code compares candidate and accepted versions. It—not an LLM or human—makes the promotion decision.</p></article>
             <article class="card"><h3>Evaluator</h3><p>Official ChartQA normalization plus paired statistical analysis. It never writes memory or supplies task answers.</p></article>
-            <article class="card"><h3>H-star Analysis Model</h3><p>An optional calibration-only model may propose one bounded H-star revision. Its endpoint is discovered at the provider gate; regression evidence decides acceptance.</p></article>
+            <article class="card"><h3>H-star Analysis Model</h3><p>A calibration-only model evolves three answer-free H-star revisions over ordered four-task Discovery rounds. Its endpoint is discovered at the provider gate; sealed regression evidence decides acceptance of the frozen final revision.</p></article>
           </div>
           <div class="callout"><strong>Harness artifacts, not extra agents</strong><code>H</code> is the fixed Minimal Harness. <code>H-star</code> is a calibration-only optimized reference. <strong>Kappa Guidance</strong> is the frozen, answer-free artifact adapted from H-star for the Reviewer; Kappa is not a model. The human operator only configures credentials and recovers infrastructure.</div>
         </section>
@@ -215,7 +215,7 @@
           <h2>ChartQA is required. MathVista is stretch-only.</h2>
           <p class="lead">ChartQA supplies chart images, human-authored questions, known answers, and official relaxed-accuracy logic. Deterministic manifests prevent membership drift.</p>
           <div class="grid4">
-            <article class="card tint"><h3>Harness Calibration Set</h3><p><strong>Exactly 16.</strong> Eight discovery and eight regression items derive H-star and Kappa; they never create Behavior Cards.</p></article>
+            <article class="card tint"><h3>Harness Calibration Set</h3><p><strong>Exactly 24.</strong> Twelve Discovery items in three rounds of four evolve H-star; twelve sealed Regression items screen the final revision and derive Kappa. They never create Behavior Cards.</p></article>
             <article class="card tint"><h3>Collection Set</h3><p><strong>Exactly 40.</strong> Reviewer-guided episodes may generate one Candidate Version.</p></article>
             <article class="card tint"><h3>Promotion Set</h3><p><strong>Exactly 30.</strong> Validation items accept or reject the candidate and never produce memories.</p></article>
             <article class="card tint"><h3>Final Held-Out Set</h3><p><strong>Exactly 60.</strong> Untouched items run once after the final Accepted Version is frozen.</p></article>
@@ -386,7 +386,7 @@
             <li><a href="https://docs.nvidia.com/nemoclaw/user-guide/openclaw/reference/cli-selection-guide">NemoClaw and OpenShell CLI guidance</a></li>
             <li><a href="https://github.com/youdotcom-oss/agent-skills">You.com agent skills evaluated and excluded from runtime</a></li>
             <li><a href="../CONTEXT.md">Canonical project language</a></li>
-            <li><a href="./adr/0001-chartqa-as-primary-benchmark.md">Recorded architectural decisions</a>, including the <a href="./adr/0009-freeze-chartqa-kappa-before-collection.md">Kappa freeze</a>, <a href="./adr/0010-use-one-batched-lifecycle-for-the-primary-experiment.md">batched lifecycle</a>, and <a href="./adr/0011-allow-offline-core-before-live-provider-gates.md">offline-core exception</a></li>
+            <li><a href="./adr/0001-chartqa-as-primary-benchmark.md">Recorded architectural decisions</a>, including the <a href="./adr/0012-use-three-round-hstar-evolution.md">three-round H-star/Kappa freeze</a>, <a href="./adr/0010-use-one-batched-lifecycle-for-the-primary-experiment.md">batched lifecycle</a>, and <a href="./adr/0011-allow-offline-core-before-live-provider-gates.md">offline-core exception</a></li>
           </ul>
           <p class="fine">Research and planning snapshot: 16 October 2026. Account-specific product availability must be verified before implementation.</p>
         </section>

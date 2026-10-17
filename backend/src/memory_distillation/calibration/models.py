@@ -31,8 +31,10 @@ class HStarAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     manifest_hash: str
-    discovery_task_ids: tuple[str, ...] = Field(min_length=8, max_length=8)
-    observations: tuple[DiscoveryObservation, ...] = Field(min_length=8, max_length=8)
+    round_index: int = Field(ge=1, le=3)
+    discovery_task_ids: tuple[str, ...] = Field(min_length=4, max_length=12)
+    observations: tuple[DiscoveryObservation, ...] = Field(min_length=4, max_length=12)
+    prior_proposal: HStarProposal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +81,8 @@ class CalibrationProgress(BaseModel):
         "complete",
         "failed",
     ]
-    discovery_completed: int = Field(default=0, ge=0, le=8)
-    regression_completed: int = Field(default=0, ge=0, le=8)
+    discovery_completed: int = Field(default=0, ge=0, le=12)
+    regression_completed: int = Field(default=0, ge=0, le=12)
     smoke_completed: int = Field(default=0, ge=0, le=5)
     smoke_total: int = Field(default=0, ge=0, le=5)
     current_task_id: str | None = None
@@ -157,16 +159,28 @@ class AdaptationDecision(BaseModel):
     output_rule_ids: tuple[str, ...]
 
 
+class HStarRevision(BaseModel):
+    """One immutable H-star proposal produced after a four-task round."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    round_index: int = Field(ge=1, le=3)
+    task_ids: tuple[str, ...] = Field(min_length=4, max_length=4)
+    proposal: HStarProposal
+    proposal_hash: str
+
+
 class CalibrationReport(BaseModel):
     """Frozen evidence needed before measured Collection may begin."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["calibration-report.v1"] = "calibration-report.v1"
+    schema_version: Literal["calibration-report.v2"] = "calibration-report.v2"
     run_id: str
     split: CalibrationSplit
     proposal: HStarProposal
     proposal_hash: str
+    hstar_revisions: tuple[HStarRevision, ...] = ()
     kappa: KappaArtifact
     fallback_reason: str | None
     models: ModelIdentities
@@ -192,7 +206,11 @@ def discovery_observations(
         DiscoveryObservation(
             task_id=task.task_id,
             question=task.question,
-            correct=_require_correct(run),
+            correct=(
+                run.termination_reason == "completed"
+                and run.score is not None
+                and run.score.correct
+            ),
             termination_reason=run.termination_reason,
             action_types=tuple(action.type for action in run.actions),
         )

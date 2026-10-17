@@ -25,8 +25,8 @@ from memory_distillation.task_execution import (
 class FixtureSource:
     def __init__(self) -> None:
         self.calls: list[str] = []
-        self.discovery = tuple(_task(f"d{index}") for index in range(8))
-        self.regression = tuple(_task(f"r{index}") for index in range(8))
+        self.discovery = tuple(_task(f"d{index}") for index in range(12))
+        self.regression = tuple(_task(f"r{index}") for index in range(12))
 
     def load_calibration_discovery(self) -> tuple[TaskInput, ...]:
         self.calls.append("discovery")
@@ -48,12 +48,16 @@ class FixtureSource:
 class FixtureAnalyst:
     def __init__(self, source: FixtureSource) -> None:
         self.source = source
+        self.requests: list[HStarAnalysisRequest] = []
 
     def propose(self, request: HStarAnalysisRequest, *, seed: int) -> HStarAnalysisResult:
         assert self.source.calls == ["discovery"]
-        assert len(request.observations) == 8
+        self.requests.append(request)
+        assert len(request.observations) == request.round_index * 4
         proposal = HStarProposal(
-            proposal_id=f"hstar-{seed}",
+            proposal_id=f"hstar-r{request.round_index}",
+            parent_revision=request.round_index - 1,
+            revision=request.round_index,
             rules=(
                 KappaRule(
                     rule_id="verify-labels",
@@ -159,16 +163,39 @@ class FailingPilotExecutor(FixtureExecutor):
         )
 
 
+class FailingDiscoveryExecutor(FixtureExecutor):
+    def run(
+        self,
+        *,
+        task: TaskInput,
+        asset: TaskAsset,
+        policy: ExecutionPolicy,
+        seed: int,
+        behavior_cards: tuple[str, ...] = (),
+    ) -> TaskRun:
+        if not policy.review_required and task.task_id == "d9":
+            self.baseline_seeds[task.task_id] = seed
+            return _failed_run(task.task_id, seed=seed)
+        return super().run(
+            task=task,
+            asset=asset,
+            policy=policy,
+            seed=seed,
+            behavior_cards=behavior_cards,
+        )
+
+
 def test_regression_remains_sealed_until_the_proposal_is_frozen() -> None:
     source = FixtureSource()
     progress: list[CalibrationProgress] = []
     executor = FixtureExecutor(candidate_improves=True)
 
+    analyst = FixtureAnalyst(source)
     report = calibrate_review_policy(
         run_id="calibration-test",
         source=source,
         executor=executor,
-        analyst=FixtureAnalyst(source),
+        analyst=analyst,
         manifest_hash="m" * 64,
         models=ModelIdentities(
             student="fixture-student",
@@ -182,12 +209,15 @@ def test_regression_remains_sealed_until_the_proposal_is_frozen() -> None:
     )
 
     assert source.calls == ["discovery", "regression"]
-    assert report.kappa.revision == 1
+    assert report.kappa.revision == 3
     assert report.kappa.guidance == (
         "Verify labels and arithmetic before the final answer.",
     )
     assert report.fallback_reason is None
-    assert len(report.outcomes) == 35
+    assert [request.round_index for request in analyst.requests] == [1, 2, 3]
+    assert [len(request.observations) for request in analyst.requests] == [4, 8, 12]
+    assert [revision.proposal.revision for revision in report.hstar_revisions] == [1, 2, 3]
+    assert len(report.outcomes) == 51
     assert progress[-1].stage == "complete"
     assert progress[-1].smoke_completed == 3
     assert executor.candidate_seeds == executor.baseline_seeds
@@ -241,6 +271,38 @@ def test_failed_pilot_interventions_remain_auditable() -> None:
     assert all(item.correct is None for item in pilot_outcomes)
     assert report.pilot_summary.invalid_interventions == 3
     assert all(not item.accepted_action_valid for item in report.pilot_interventions)
+
+
+def test_failed_discovery_task_is_recorded_and_calibration_continues() -> None:
+    source = FixtureSource()
+    analyst = FixtureAnalyst(source)
+
+    report = calibrate_review_policy(
+        run_id="calibration-failed-discovery",
+        source=source,
+        executor=FailingDiscoveryExecutor(candidate_improves=True),
+        analyst=analyst,
+        manifest_hash="m" * 64,
+        models=ModelIdentities(
+            student="fixture-student",
+            reviewer="fixture-reviewer",
+            hstar="fixture-hstar",
+        ),
+        provenance=_provenance(),
+        publish=lambda progress: None,
+        cost_meter=lambda: Decimal("0.01"),
+        pilot_tasks=3,
+    )
+
+    failed = next(
+        item
+        for item in report.outcomes
+        if item.task_id == "d9" and item.condition == "baseline"
+    )
+    assert failed.termination_reason == "sandbox_failed"
+    assert failed.correct is None
+    assert analyst.requests[-1].observations[-3].correct is False
+    assert report.kappa.revision == 3
 
 
 def _provenance() -> CalibrationProvenance:
@@ -303,4 +365,25 @@ def _run(
         review_calls=len(reviews),
         model_calls=1,
         kappa_hash=kappa_hash,
+    )
+
+
+def _failed_run(task_id: str, *, seed: int) -> TaskRun:
+    return TaskRun(
+        task_id=task_id,
+        seed=seed,
+        termination_reason="sandbox_failed",
+        actions=(),
+        observations=(),
+        reviews=(),
+        events=(),
+        score=None,
+        input_tokens=10,
+        output_tokens=2,
+        elapsed_ms=5,
+        tool_calls=1,
+        python_calls=1,
+        review_calls=0,
+        model_calls=1,
+        kappa_hash=None,
     )

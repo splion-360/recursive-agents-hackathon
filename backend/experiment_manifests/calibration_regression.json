@@ -1,5 +1,5 @@
 {
-  "content_sha256": "1930c9db7742be4adacf6e2e40ffb259f884335946c5558f4f53dcf98497ea6d",
+  "content_sha256": "c14575a8b0e0a31b460beb148e9ca91c09c9239fcc5b66dfbeaa2ab7c8095fd1",
   "dataset_name": "ChartQA",
   "dataset_repository": "https://github.com/vis-nlp/ChartQA",
   "dataset_revision": "044eabfc306abfe9340c5741f0093aefc5973d06",
@@ -75,6 +75,42 @@
       "question_sha256": "7d4fa10d7023b7398dfe9cc634507825a79ec692fe693e8ffbdd29e831e0f971",
       "source_split": "train",
       "task_id": "chartqa:train:human:67cb1ab4400cb52d030660d6"
+    },
+    {
+      "image_asset_id": "train/png/13957249000673.png",
+      "image_sha256": "3e4121ab8a5ca78ebff67b31096fca8ba744b7ec840ae070f4a4348c8bbd340d",
+      "operation_type": "comparison",
+      "question_form": "yes_no",
+      "question_sha256": "3a779110d4267fd4b774e96ccf3ed23c65acb43368caf12a21a73caa618132c6",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:07f231f9d7617db377b9cb62"
+    },
+    {
+      "image_asset_id": "train/png/multi_col_60478.png",
+      "image_sha256": "10cc2c2fb966003c2b90eaa7f4c9ba5cbf6bccaafd95cb78bc0493a92d8b1b2f",
+      "operation_type": "counting",
+      "question_form": "how_many",
+      "question_sha256": "c0a8db66521716824f5545333d910d149dfeacbb8b824d29be9ead7922eba41b",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:c6be06cb9c1c0a66fcce64b3"
+    },
+    {
+      "image_asset_id": "train/png/9344.png",
+      "image_sha256": "f124c37cc99ea02df98bfdb5da4241756f93139a57d7201e84877ec18ba39705",
+      "operation_type": "arithmetic",
+      "question_form": "other",
+      "question_sha256": "fd51518e369d70832f4e8940ff98f41a812e1cfaef03ce73e706bf11284beedd",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:2d8d68237ef9380e16740110"
+    },
+    {
+      "image_asset_id": "train/png/multi_col_20032.png",
+      "image_sha256": "62398a0e438ccab5be694db4734525562ab134e5f7710d51803f4f774511d78d",
+      "operation_type": "comparison",
+      "question_form": "other",
+      "question_sha256": "ad53272cb944aa4b78d787fe977853a436839ddb78e3a1c002bd701f58dacd77",
+      "source_split": "train",
+      "task_id": "chartqa:train:human:601c7a7491d8b51105168874"
     }
   ],
   "name": "calibration_regression",

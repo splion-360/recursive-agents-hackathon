@@ -1,12 +1,14 @@
 """Typed Crusoe Managed Inference adapter with bounded cost admission."""
 
+from __future__ import annotations
+
 import base64
 import json
 from dataclasses import dataclass
 from decimal import Decimal
 from time import monotonic, sleep
 from types import TracebackType
-from typing import Any, Literal, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
@@ -30,6 +32,10 @@ from memory_distillation.task_execution.models import (
     StudentAction,
 )
 from memory_distillation.task_execution.review import ReviewRequest, ReviewResult
+
+if TYPE_CHECKING:
+    from memory_distillation.operational_memory.models import ReviewedEpisode
+    from memory_distillation.versioning.models import ConsolidationBatch, VersionView
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
 _MILLION = Decimal(1_000_000)
@@ -174,7 +180,7 @@ class _ReviewOutput(BaseModel):
     private_reason: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_action_payload(self) -> "_ReviewOutput":
+    def validate_action_payload(self) -> _ReviewOutput:
         required_fields = {
             "inspect_image": frozenset(),
             "crop": frozenset({"x0", "y0", "x1", "y1"}),
@@ -213,6 +219,22 @@ class _ReviewOutput(BaseModel):
         assert self.x1 is not None
         assert self.y1 is not None
         return CropAction(x0=self.x0, y0=self.y0, x1=self.x1, y1=self.y1)
+
+
+class _CardOperationOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["CREATE", "REINFORCE", "REFINE", "RETIRE"]
+    card_id: str
+    trigger: str | None = None
+    instruction: str | None = None
+    evidence_episode_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class _ConsolidationOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operations: tuple[_CardOperationOutput, ...] = Field(min_length=1, max_length=8)
 
 
 class CrusoeClient:
@@ -470,6 +492,26 @@ class CrusoeClient:
                     request_id=None,
                     retry_count=retry_count,
                 ) from error
+            except (
+                httpx2.ReadTimeout,
+                httpx2.ReadError,
+                httpx2.RemoteProtocolError,
+            ) as error:
+                # Chat completion is side-effect free. If the request was
+                # accepted but its response was lost, replaying the frozen
+                # payload preserves experiment semantics (with a possible
+                # duplicate provider charge).
+                if retry_count < self._max_retries:
+                    self._backoff(retry_count)
+                    retry_count += 1
+                    continue
+                self._submission_uncertain = True
+                raise CrusoeProviderError(
+                    status_code=None,
+                    failure_kind="response_unavailable",
+                    request_id=None,
+                    retry_count=retry_count,
+                ) from error
             except httpx2.RequestError as error:
                 self._submission_uncertain = True
                 raise CrusoeProviderError(
@@ -627,7 +669,9 @@ class CrusoeReviewer:
                         "private_reason. Set accepted_action_type and populate only the fields "
                         "needed by that action: answer for final_answer, code for run_python, "
                         "x0/y0/x1/y1 for crop, or none for inspect_image. Set every unused "
-                        "action payload field to null."
+                        "action payload field to null. If the proposed action is an unsupported "
+                        "final_answer, REPLACE it with inspect_image, crop, or run_python to "
+                        "gather evidence; never reveal a corrected final_answer directly."
                     ),
                 },
                 {
@@ -648,6 +692,15 @@ class CrusoeReviewer:
         accepted_action = result.output.to_action()
         if result.output.decision == "pass" and accepted_action != request.proposed_action:
             raise ValueError("Crusoe Reviewer changed an action while claiming PASS")
+        if (
+            result.output.decision == "replace"
+            and request.proposed_action.type == "final_answer"
+            and accepted_action.type == "final_answer"
+        ):
+            raise ValueError(
+                "Crusoe Reviewer must replace an unsupported final answer with an "
+                "evidence-gathering action"
+            )
         return ReviewResult(
             decision=result.output.decision,
             accepted_action=accepted_action,
@@ -663,7 +716,7 @@ class CrusoeReviewer:
 
 
 class CrusoeHStarAnalyst:
-    """Propose one bounded review-policy revision from discovery-only evidence."""
+    """Evolve a bounded review-policy harness from discovery-only evidence."""
 
     def __init__(
         self,
@@ -684,8 +737,10 @@ class CrusoeHStarAnalyst:
                 {
                     "role": "system",
                     "content": (
-                        "Analyze only the supplied ChartQA discovery outcomes. Propose one "
-                        "revision containing exactly one general, answer-free review rule. "
+                        "Analyze only the supplied ChartQA discovery outcomes and prior "
+                        "proposal. Return the full next H-star revision containing exactly "
+                        "one general, answer-free review rule. Set revision to round_index "
+                        "and parent_revision to round_index minus one. "
                         "Classify its source_component as tools, middleware, skills, or "
                         "failure_memory. "
                         "Rules must use only inspect_image, crop, run_python, or final_answer. "
@@ -703,14 +758,104 @@ class CrusoeHStarAnalyst:
             max_output_tokens=self._max_output_tokens,
             seed=seed,
         )
+        # Revision lineage and evidence visibility are orchestrator-owned
+        # provenance, not model judgments. Bind them from the validated request
+        # so a schema-valid stale model default cannot corrupt the chain.
+        proposal = result.output.model_copy(
+            update={
+                "parent_revision": request.round_index - 1,
+                "revision": request.round_index,
+                "discovery_task_ids": request.discovery_task_ids,
+            }
+        )
         return HStarAnalysisResult(
-            proposal=result.output,
+            proposal=proposal,
             model_id=result.model_id,
             request_id=result.request_id,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             latency_ms=result.latency_ms,
             actual_cost_usd=result.actual_cost_usd,
+        )
+
+
+class CrusoeConsolidator:
+    """Propose answer-free Behavior Card operations from one frozen snapshot."""
+
+    def __init__(
+        self,
+        *,
+        client: CrusoeClient,
+        model_id: str,
+        max_output_tokens: int,
+    ) -> None:
+        client.get_model(model_id)
+        self._client = client
+        self._model_id = model_id
+        self._max_output_tokens = max_output_tokens
+
+    def consolidate(
+        self,
+        *,
+        episodes: tuple[ReviewedEpisode, ...],
+        parent_view: VersionView,
+        seed: int,
+    ) -> ConsolidationBatch:
+        """Return one bounded operation batch; deterministic validators remain authoritative."""
+
+        from memory_distillation.versioning.models import CardOperation, ConsolidationBatch
+
+        if not episodes:
+            raise ValueError("consolidation requires eligible Reviewed Episodes")
+        summaries = tuple(
+            {
+                "episode_id": episode.episode_id,
+                "question": episode.task.question,
+                "correct": episode.correct,
+                "termination_reason": episode.termination_reason,
+                "action_types": [action.type for action in episode.actions],
+                "review_decisions": [review.decision for review in episode.reviews],
+            }
+            for episode in episodes
+        )
+        result = self._client.complete_json(
+            model_id=self._model_id,
+            messages=(
+                {
+                    "role": "system",
+                    "content": (
+                        "Distill the supplied reviewed ChartQA episode summaries into one to "
+                        "eight general procedural Behavior Card operations. For an empty parent, "
+                        "use CREATE only. Every episode_id must appear in at least one operation's "
+                        "evidence_episode_ids. Triggers and instructions must be answer-free and "
+                        "must not copy task IDs, questions, chart labels, numbers, or answers."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "parent_view": parent_view.model_dump(mode="json"),
+                            "episodes": summaries,
+                        },
+                        sort_keys=True,
+                    ),
+                },
+            ),
+            output_type=_ConsolidationOutput,
+            max_output_tokens=self._max_output_tokens,
+            seed=seed,
+        )
+        return ConsolidationBatch(
+            operations=tuple(
+                CardOperation.model_validate(item.model_dump(mode="json"))
+                for item in result.output.operations
+            ),
+            model_id=result.model_id,
+            request_id=result.request_id,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            latency_ms=result.latency_ms,
         )
 
 

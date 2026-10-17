@@ -9,6 +9,23 @@ import {
 } from "./api";
 
 type View = "overview" | "live" | "calibration" | "memory" | "health";
+type TraceCategory = "all" | "discovery_baseline" | "discovery_candidate" | "regression_baseline" | "regression_candidate" | "smoke";
+
+const IMPORTANT_STAGE_DESCRIPTIONS: Record<string, string> = {
+  discovery: "The Student solves visible tasks while H-star learns one general review rule from the results.",
+  hstar_proposal: "H-star freezes its final proposed rule before any held-out validation task is revealed.",
+  regression: "A sealed test set is run twice—without and with the proposed rule—to check whether the rule improves results.",
+  kappa_freeze: "The supported part of the H-star rule is locked into the final κ Reviewer guidance.",
+};
+
+const TRACE_CATEGORY_DESCRIPTIONS: Record<TraceCategory, string> = {
+  all: "Every execution from every calibration phase and condition.",
+  discovery_baseline: "Discovery tasks run without the proposed H-star rule. This is the comparison point.",
+  discovery_candidate: "The same Discovery tasks run with the current H-star rule so its effect can be measured.",
+  regression_baseline: "Sealed test tasks run without the proposed rule. H-star never sees these tasks while evolving.",
+  regression_candidate: "The same sealed test tasks run with the proposed rule. This decides whether the rule enters κ.",
+  smoke: "Pilot tasks run with final frozen κ to verify the Reviewer can safely PASS or REPLACE actions.",
+};
 
 const VIEW_LABELS: Record<View, string> = {
   overview: "Overview",
@@ -32,7 +49,7 @@ export function App() {
         .then((value) => {
           if (!active) return;
           setSnapshot(value);
-          setEvents(value.recent_events);
+          setEvents(value.run_events);
           setError(null);
         })
         .catch((reason: unknown) => {
@@ -93,15 +110,16 @@ export function App() {
 function Overview({ snapshot, events, onNavigate }: { snapshot: DashboardSnapshot; events: RunEvent[]; onNavigate: (view: View) => void }) {
   const status = snapshot.calibration;
   const completed = status.discovery_completed + status.regression_completed;
-  const progress = Math.round((completed / 16) * 100);
+  const total = snapshot.split_totals.discovery + snapshot.split_totals.regression;
+  const progress = Math.round((completed / total) * 100);
   return <div className="page-stack">
     <section className="hero-card">
       <div className="hero-copy"><span className="kicker">VERSION N → N+1</span><h2>Watch experience become<br/><em>operational memory.</em></h2><p>One evidence chain from ChartQA trajectories through private review, frozen κ guidance, and deterministic promotion.</p><button onClick={() => onNavigate("live")}>{status.state === "running" ? "Watch current forward pass" : "Open live monitor"}<span>→</span></button></div>
       <div className="orb-wrap"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="brain-orb"><span>κ</span><small>{status.kappa_hash ? "FROZEN" : "CALIBRATING"}</small></div></div>
     </section>
     <section className="stat-row">
-      <Stat label="Calibration progress" value={`${completed}/16`} hint={`${progress}% · ${pretty(status.stage)}`} tone="mint" />
-      <Stat label="Public run events" value={String(snapshot.event_count)} hint={events.length ? pretty(events.at(-1)?.type ?? "waiting") : "Waiting for shell runner"} tone="violet" />
+      <Stat label="Calibration progress" value={`${completed}/${total}`} hint={`${progress}% · ${stageLabel(status.stage)}`} tone="mint" />
+      <Stat label="Public run events" value={String(snapshot.event_count)} hint={events.length ? pretty(events.at(-1)?.type ?? "waiting") : "No experiment events recorded"} tone="violet" />
       <Stat label="Accepted memory" value={snapshot.accepted_version} hint={`${snapshot.accepted_card_count} cards · baseline`} tone="amber" />
       <Stat label="Measured results" value="Pending" hint="No synthetic claims" tone="slate" />
     </section>
@@ -125,39 +143,77 @@ function Overview({ snapshot, events, onNavigate }: { snapshot: DashboardSnapsho
 }
 
 function LiveRun({ snapshot, events, connected }: { snapshot: DashboardSnapshot; events: RunEvent[]; connected: boolean }) {
-  const currentTask = snapshot.calibration.current_task_id;
+  const [category, setCategory] = useState<TraceCategory>("all");
+  const calibration = snapshot.calibration;
+  const currentTask = calibration.current_task_id;
   const traces = taskTraces(events);
+  const phases = new Map(snapshot.calibration_tasks.map((task) => [task.task_id, task.phase]));
+  const categorized = traces.map((trace) => ({ trace, category: traceCategory(trace, phases) }));
+  const visibleTraces = categorized
+    .filter((item) => category === "all" || item.category === category)
+    .map((item) => item.trace);
   const completed = traces.filter((trace) => trace.some((event) => event.type === "run_completed"));
   const scored = completed.filter((trace) => trace.at(-1)?.correct !== undefined && trace.at(-1)?.correct !== null);
   const correct = scored.filter((trace) => trace.at(-1)?.correct === true).length;
+  const incorrect = scored.length - correct;
+  const active = traces.length - completed.length;
+  const progress = liveProgress(calibration);
   return <div className="page-stack">
-    <section className="live-banner panel"><div><span className={`live-signal ${connected ? "on" : ""}`} /><div><b>{snapshot.calibration.state === "running" ? "Forward pass in progress" : snapshot.calibration.state === "failed" ? "Run stopped" : "Live monitor ready"}</b><small>{currentTask ?? "Start Ticket 14 in the shell; task results will appear automatically."}</small></div></div><Metric label="Stage" value={pretty(snapshot.calibration.stage)} /><Metric label="Tasks" value={String(traces.length)} /><Metric label="Score" value={scored.length ? `${correct}/${scored.length} scored` : "—"} /></section>
-    {snapshot.calibration.state === "failed" ? <div className="run-state-note failed"><b>Calibration stopped</b><span>{snapshot.calibration.message}</span></div> : null}
-    <section className="panel trace-panel"><PanelTitle eyebrow="PUBLIC TASK RESULTS" title="Compact trajectory monitor" detail="One row per task · Student output, Reviewer decision, and official score" />
-      {events.length === 0 ? <EmptyState title="No forward pass yet" body="The SSE connection is ready. Run the calibration command in your shell to populate this table." /> : <TaskTraceTable traces={traces} />}
+    <section className="live-banner panel"><div><span className={`live-signal ${connected ? "on" : ""}`} /><div><b>{calibration.state === "running" ? "Forward pass in progress" : calibration.state === "failed" ? "Run stopped" : "Live monitor ready"}</b><small>{currentTask ?? calibrationStatusDetail(calibration)}</small></div></div><Metric label="Stage" value={stageLabel(calibration.stage)} /><Metric label={progress.label} value={progress.value} detail={progress.detail} /><Metric label="All run results" value={scored.length ? `${correct} correct · ${incorrect} incorrect` : "No completed scores"} detail={`${traces.length} recorded runs${active ? ` · ${active} running` : ""}`} /></section>
+    <StageGuide currentStage={calibration.stage} />
+    {calibration.state === "failed" ? <div className="run-state-note failed"><b>Calibration stopped</b><span>{calibration.message}</span></div> : null}
+    <section className="panel trace-panel"><PanelTitle eyebrow="PUBLIC TASK RESULTS" title="Complete trajectory history" detail={`${traces.length} recorded runs · Student output, Reviewer decision, and official score`} />
+      {events.length === 0 ? <EmptyState title="No forward pass yet" body="Calibration task results will appear here when an experiment run begins." /> : <><TraceFilters selected={category} categorized={categorized} onSelect={setCategory} /><p className="filter-description"><b>{traceCategoryLabel(category)}</b>{TRACE_CATEGORY_DESCRIPTIONS[category]}</p><TaskTraceTable traces={visibleTraces} /></>}
     </section>
   </div>;
 }
 
+function StageGuide({ currentStage }: { currentStage: string }) {
+  const description = IMPORTANT_STAGE_DESCRIPTIONS[currentStage];
+  if (!description) return null;
+  return <div className="stage-guide"><b>{stageLabel(currentStage)}</b><span>{description}</span></div>;
+}
+
+function TraceFilters({ selected, categorized, onSelect }: { selected: TraceCategory; categorized: Array<{ trace: RunEvent[]; category: TraceCategory }>; onSelect: (category: TraceCategory) => void }) {
+  const filters: Array<{ id: TraceCategory; label: string }> = [
+    { id: "all", label: "All runs" },
+    { id: "discovery_baseline", label: "Discovery · Baseline" },
+    { id: "discovery_candidate", label: "Discovery · H-star candidate" },
+    { id: "regression_baseline", label: "Validation · Without rule" },
+    { id: "regression_candidate", label: "Validation · With rule" },
+    { id: "smoke", label: "Smoke · Frozen κ" },
+  ];
+  return <div className="trace-filters" aria-label="Trajectory filters">{filters.map((filter) => {
+    const count = filter.id === "all" ? categorized.length : categorized.filter((item) => item.category === filter.id).length;
+    return <button className={selected === filter.id ? "active" : ""} key={filter.id} onClick={() => onSelect(filter.id)}>{filter.label}<span>{count}</span></button>;
+  })}</div>;
+}
+
 function Calibration({ snapshot, events }: { snapshot: DashboardSnapshot; events: RunEvent[] }) {
   const c = snapshot.calibration;
+  const legacyArtifact = c.state === "complete" && (
+    c.discovery_completed < snapshot.split_totals.discovery
+    || c.regression_completed < snapshot.split_totals.regression
+  );
   const decisions = events.filter((event) => event.type === "action_reviewed");
   const replacements = decisions.filter((event) => event.review?.decision === "replace").length;
   return <div className="page-stack">
-    <section className="calibration-head"><div><span className="kicker">H-STAR → κ</span><h2>Calibration laboratory</h2><p>Discovery can shape one bounded proposal. Regression may only accept or reject it.</p></div><div className={`state-stamp ${c.state}`}>{pretty(c.state)}<small>{pretty(c.stage)}</small></div></section>
+    <section className="calibration-head"><div><span className="kicker">H-STAR → κ</span><h2>Calibration laboratory</h2><p>Three four-task Discovery rounds evolve H-star. Held-out validation tests only the frozen final revision.</p></div><div className={`state-stamp ${c.state}`}>{pretty(c.state)}<small>{stageLabel(c.stage)}</small></div></section>
+    {legacyArtifact ? <div className="run-state-note"><b>Historical artifact</b><span>This completed run used the previous 8+8 contract. Its results remain visible, but a new calibration is required for the current 12+12 three-round design.</span></div> : null}
     <section className="split-progress">
-      <PhaseCard index="A" title="Discovery" count={c.discovery_completed} total={8} detail="Visible to H-star analysis" locked={false} />
+      <PhaseCard index="A" title="Discovery" count={c.discovery_completed} total={snapshot.split_totals.discovery} detail="3 rounds × 4 tasks · visible to H-star" locked={false} />
       <div className="isolation-line"><span>ISOLATION BOUNDARY</span></div>
-      <PhaseCard index="B" title="Regression" count={c.regression_completed} total={8} detail="Hidden until proposal freezes" locked={c.stage === "waiting" || c.stage === "discovery"} />
+      <PhaseCard index="B" title="Held-out validation" count={c.regression_completed} total={snapshot.split_totals.regression} detail="Hidden until final H-star freezes" locked={c.stage === "waiting" || c.stage === "discovery"} />
     </section>
     <section className="two-column calibration-grid">
-      <div className="panel proposal-card"><PanelTitle eyebrow="ONE BOUNDED REVISION" title="H-star proposal" detail={shortModel(snapshot.models.hstar)} />
-        {c.proposal_hash ? <><CodeLine label="Proposal" value={c.proposal_id ?? "revision-1"} /><CodeLine label="SHA-256" value={c.proposal_hash} /><RuleList accepted={c.accepted_rule_ids} rejected={c.rejected_rule_ids} /></> : <EmptyState title="Proposal not generated" body="It will appear after all eight discovery trajectories are classified." />}
+      <div className="panel proposal-card"><PanelTitle eyebrow="THREE VERSIONED REVISIONS" title="H-star proposal" detail={shortModel(snapshot.models.hstar)} />
+        {c.proposal_hash ? <><CodeLine label="Final proposal" value={c.proposal_id ?? "revision-3"} /><CodeLine label="SHA-256" value={c.proposal_hash} /><RuleList accepted={c.accepted_rule_ids} rejected={c.rejected_rule_ids} /></> : <EmptyState title="Proposal not generated" body="A revision appears after each four-task Discovery round." />}
       </div>
       <div className="panel proposal-card"><PanelTitle eyebrow="FROZEN REVIEW POLICY" title="κ guidance" detail={shortModel(snapshot.models.reviewer)} />
-        {c.kappa_hash ? <><CodeLine label="Artifact" value={c.kappa_artifact_id ?? "kappa.v1"} /><CodeLine label="SHA-256" value={c.kappa_hash} /><p className="success-note">Regression screen passed. Exact artifact is frozen for measured Collection.</p></> : <EmptyState title="No κ artifact yet" body="Only rules with discovery benefit, positive regression evidence, action compatibility, and privacy clearance can enter κ." />}
+        {c.kappa_hash ? <><CodeLine label="Artifact" value={c.kappa_artifact_id ?? "kappa.v1"} /><CodeLine label="SHA-256" value={c.kappa_hash} /><p className="success-note">Held-out validation passed. Exact artifact is frozen for measured Collection.</p></> : <EmptyState title="No κ artifact yet" body="Only rules with discovery benefit, positive held-out evidence, action compatibility, and privacy clearance can enter κ." />}
       </div>
     </section>
+    <section className="harness-grid">{snapshot.harnesses.map((harness) => <details className="panel harness-card" key={harness.role} open={harness.role === "student" || harness.role === "kappa"}><summary><span>{pretty(harness.role)}</span><small>{shortModel(harness.model_id)}</small></summary><p>{dashboardCopy(harness.purpose)}</p><HarnessLine label="Sees" values={harness.sees.map(dashboardCopy)} /><HarnessLine label="Can do" values={harness.actions.map(dashboardCopy)} />{harness.revisions.length ? <HarnessLine label="Evolution" values={harness.revisions.map(dashboardCopy)} /> : null}{harness.guidance.length ? <HarnessLine label="Exact guidance" values={harness.guidance.map(dashboardCopy)} /> : null}</details>)}</section>
     <section className="stat-row compact"><Stat label="Reviewer decisions" value={String(decisions.length)} hint="Public decisions only" tone="violet" /><Stat label="REPLACE" value={String(replacements)} hint="Smallest valid replacement" tone="amber" /><Stat label="Tokens" value={formatNumber(c.input_tokens + c.output_tokens)} hint={`${formatNumber(c.input_tokens)} in · ${formatNumber(c.output_tokens)} out`} tone="mint" /><Stat label="Estimated cost" value={`$${c.estimated_cost_usd.toFixed(4)}`} hint="Runner-reported" tone="slate" /></section>
   </div>;
 }
@@ -170,7 +226,7 @@ function SystemHealth({ snapshot }: { snapshot: DashboardSnapshot }) {
   return <div className="page-stack"><section className="panel health-panel"><PanelTitle eyebrow="PREFLIGHT" title="Runtime configuration" detail="Configured does not mean live-verified in this process" /><div className="health-list">{snapshot.integrations.map((item) => <article key={item.name}><span className={`health-icon ${item.state}`}>{item.state === "configured" ? "✓" : item.state === "limited" ? "!" : "×"}</span><div><b>{item.name}</b><p>{item.detail}</p></div><em className={item.state}>{item.state}</em></article>)}</div></section><section className="two-column"><div className="panel model-panel"><PanelTitle eyebrow="LOCKED ROSTER" title="Model assignments" detail="Loaded from settings" />{Object.entries(snapshot.models).map(([role, model]) => <CodeLine key={role} label={pretty(role)} value={model ?? "Not configured"} />)}</div><div className="panel model-panel"><PanelTitle eyebrow="DATA ISOLATION" title="Frozen manifests" detail="Actual local manifest hashes" />{snapshot.manifests.map((manifest) => <CodeLine key={manifest.name} label={`${pretty(manifest.name)} · ${manifest.task_count}`} value={manifest.content_sha256} />)}</div></section></div>;
 }
 
-function ProgressCard({ snapshot }: { snapshot: DashboardSnapshot }) { const c = snapshot.calibration; return <div className="panel progress-card"><PanelTitle eyebrow="TICKET 14" title="Calibration progress" detail={c.message} /><Progress label="Discovery trajectories" value={c.discovery_completed} total={8} /><Progress label="Regression trajectories" value={c.regression_completed} total={8} /><Progress label="PASS / REPLACE smoke" value={c.smoke_completed} total={c.smoke_total || 5} /><div className="current-step"><span>NOW</span><b>{pretty(c.stage)}</b><small>{c.current_task_id ?? "Waiting for shell command"}</small></div></div>; }
+function ProgressCard({ snapshot }: { snapshot: DashboardSnapshot }) { const c = snapshot.calibration; return <div className="panel progress-card"><PanelTitle eyebrow="CALIBRATION" title="Calibration progress" detail={dashboardCopy(c.message)} /><Progress label="Discovery trajectories" value={c.discovery_completed} total={snapshot.split_totals.discovery} /><Progress label="Held-out validation pairs" value={c.regression_completed} total={snapshot.split_totals.regression} /><Progress label="PASS / REPLACE smoke" value={c.smoke_completed} total={c.smoke_total || 5} /><div className="current-step"><span>NOW</span><b>{stageLabel(c.stage)}</b><small>{c.current_task_id ?? calibrationStatusDetail(c)}</small></div></div>; }
 function RecentEvents({ events, onNavigate }: { events: RunEvent[]; onNavigate: () => void }) { return <div className="panel recent-card"><PanelTitle eyebrow="TRACE TAIL" title="Recent events" detail="Sanitized RunEvent projection" />{events.length ? events.map((event, index) => <MiniEvent event={event} key={`${event.task_id}-${event.sequence}-${index}`} />) : <EmptyState title="Stream is quiet" body="No calibration events have been written." />}<button className="text-button" onClick={onNavigate}>Open full trajectory →</button></div>; }
 function TaskTraceTable({ traces }: { traces: RunEvent[][] }) {
   const occurrenceByTask = new Map<string, number>();
@@ -212,13 +268,14 @@ function TaskTraceRow({ events, index }: { events: RunEvent[]; index: number }) 
 function MiniEvent({ event }: { event: RunEvent }) { return <div className="mini-event"><span>{eventIcon(event.type)}</span><div><b>{pretty(event.type)}</b><small>{eventDescription(event)}</small></div><code>{event.sequence}</code></div>; }
 function PhaseCard({ index, title, count, total, detail, locked }: { index: string; title: string; count: number; total: number; detail: string; locked: boolean }) { const percentage = Math.round((count / total) * 100); return <article className={`phase-card ${locked ? "locked" : ""}`}><span>{index}</span><div><small>{locked ? "SEALED" : "CALIBRATION SPLIT"}</small><h3>{title}</h3><p>{detail}</p></div><strong>{count}<i>/{total}</i></strong><div className="phase-bar"><i style={{ width: `${percentage}%` }} /></div></article>; }
 function Stat({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: string }) { return <article className={`stat-card ${tone}`}><small>{label}</small><strong>{value}</strong><p>{hint}</p></article>; }
-function Metric({ label, value }: { label: string; value: string }) { return <div className="banner-metric"><small>{label}</small><b>{value}</b></div>; }
+function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) { return <div className="banner-metric"><small>{label}</small><b>{value}</b>{detail ? <span>{detail}</span> : null}</div>; }
 function Progress({ label, value, total }: { label: string; value: number; total: number }) { const percentage = Math.min(100, Math.round((value / total) * 100)); return <div className="progress-item"><div><span>{label}</span><b>{value}/{total}</b></div><div><i style={{ width: `${percentage}%` }}/></div></div>; }
 function PanelTitle({ eyebrow, title, detail }: { eyebrow: string; title: string; detail: string }) { return <div className="panel-title"><div><small>{eyebrow}</small><h3>{title}</h3></div><p>{detail}</p></div>; }
 function PipelineStep({ number, title, label, state }: { number: string; title: string; label: string; state: boolean }) { return <article className={state ? "reached" : ""}><span>{number}</span><div className="step-icon">{state ? "✓" : "·"}</div><b>{title}</b><small>{label}</small></article>; }
 function PipelineArrow() { return <div className="pipeline-arrow"><i/><span>→</span></div>; }
 function CodeLine({ label, value }: { label: string; value: string }) { return <div className="code-line"><span>{label}</span><code title={value}>{value}</code></div>; }
 function RuleList({ accepted, rejected }: { accepted: string[]; rejected: string[] }) { return <div className="rules"><small>RULE SCREEN</small>{accepted.map((rule) => <span className="accepted" key={rule}>✓ {rule}</span>)}{rejected.map((rule) => <span className="rejected" key={rule}>× {rule}</span>)}</div>; }
+function HarnessLine({ label, values }: { label: string; values: string[] }) { return <div className="harness-line"><small>{label}</small>{values.map((value) => <code key={value}>{value}</code>)}</div>; }
 function VersionNode({ role, id, active = false }: { role: string; id: string; active?: boolean }) { return <div className={`version-node ${active ? "active" : ""}`}><small>{role}</small><b>{id}</b></div>; }
 function VersionConnector() { return <div className="version-connector">→</div>; }
 function EmptyState({ title, body }: { title: string; body: string }) { return <div className="empty-state"><div>◇</div><b>{title}</b><p>{body}</p></div>; }
@@ -229,6 +286,26 @@ function mergeEvents(current: RunEvent[], incoming: RunEvent[]): RunEvent[] { co
 function shortModel(model: string | null): string { return model?.split("/").at(-1) ?? "Not configured"; }
 function shortTask(task: string): string { return task.length > 35 ? `${task.slice(0, 17)}…${task.slice(-12)}` : task; }
 function pretty(value: string): string { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function stageLabel(stage: string): string { return stage === "regression" ? "Held-out validation" : pretty(stage); }
+function dashboardCopy(value: string): string { return value.replace(/regression/gi, "held-out validation"); }
+function calibrationStatusDetail(status: DashboardSnapshot["calibration"]): string {
+  if (status.state === "complete") return "Frozen κ is ready for measured Collection.";
+  if (status.state === "failed") return "Calibration ended before a valid κ artifact was frozen.";
+  if (status.state === "running") return "Preparing the next calibration task.";
+  return "No calibration run is active.";
+}
+function traceCategoryLabel(category: TraceCategory): string {
+  if (category === "regression_baseline") return "Validation · Without rule";
+  if (category === "regression_candidate") return "Validation · With rule";
+  return pretty(category);
+}
+function liveProgress(status: DashboardSnapshot["calibration"]): { label: string; value: string; detail: string } {
+  if (status.stage === "discovery") return { label: "Discovery progress", value: `${status.discovery_completed}/12`, detail: "three rounds of four" };
+  if (status.stage === "regression") return { label: "Validation progress", value: `${status.regression_completed}/12 pairs`, detail: "sealed test set" };
+  if (status.stage === "smoke_test") return { label: "Smoke progress", value: `${status.smoke_completed}/${status.smoke_total}`, detail: "PASS / REPLACE checks" };
+  if (["kappa_freeze", "complete"].includes(status.stage)) return { label: "Validation progress", value: `${status.regression_completed}/12 pairs`, detail: "sealed test set" };
+  return { label: "Calibration progress", value: `${status.discovery_completed + status.regression_completed}/24`, detail: "discovery + validation" };
+}
 function formatNumber(value: number): string { return new Intl.NumberFormat("en-US").format(value); }
 function formatDuration(milliseconds: number): string { if (milliseconds < 1_000) return `${milliseconds}ms`; const seconds = Math.round(milliseconds / 1_000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 function stageReached(current: string, target: string): boolean { const order = ["waiting", "preflight", "discovery", "hstar_proposal", "regression", "kappa_freeze", "smoke_test", "complete"]; return order.indexOf(current) >= order.indexOf(target); }
@@ -236,6 +313,15 @@ function eventIcon(type: string): string { return ({ run_started: "▶", inferen
 function eventDescription(event: RunEvent): string { if (event.type === "run_started") return "Run opened with frozen seed and policy identity."; if (event.type === "inference_requested") return `Student inference requested for turn ${event.turn_index ?? 0}.`; if (event.type === "action_proposed") return `Student proposed ${pretty(event.action?.type ?? "action")}.`; if (event.type === "action_reviewed") return event.review?.decision === "replace" ? `Reviewer replaced ${pretty(event.review.proposed_action.type)} with ${pretty(event.review.accepted_action.type)}.` : `Reviewer passed ${pretty(event.review?.accepted_action.type ?? "action")} unchanged.`; if (event.type === "observation") return event.observation?.content ?? "Sandbox observation returned."; if (event.type === "sandbox_failure") return `OpenShell failed closed: ${pretty(event.failure_kind ?? "unknown")}.`; if (event.type === "run_completed") return `Run ${pretty(event.termination_reason ?? "completed")}.`; return pretty(event.type); }
 
 function taskTraces(events: RunEvent[]): RunEvent[][] { const traces: RunEvent[][] = []; for (const event of events) { if (event.type === "run_started" || traces.length === 0) traces.push([event]); else traces.at(-1)?.push(event); } return traces; }
+function traceCategory(trace: RunEvent[], phases: Map<string, "discovery" | "regression">): TraceCategory {
+  const start = trace.find((event) => event.type === "run_started");
+  if (start?.kappa_hash) return "smoke";
+  const phase = phases.get(start?.task_id ?? trace[0]?.task_id ?? "");
+  const candidate = trace.some((event) => event.type === "action_reviewed");
+  if (phase === "discovery") return candidate ? "discovery_candidate" : "discovery_baseline";
+  if (phase === "regression") return candidate ? "regression_candidate" : "regression_baseline";
+  return "all";
+}
 function actionSummary(action: RunEvent["action"]): string { if (!action) return "Waiting for Student"; if (action.type === "final_answer") return action.answer; if (action.type === "run_python") return action.code; if (action.type === "crop") return `(${action.x0}, ${action.y0}) → (${action.x1}, ${action.y1})`; return "Inspect image"; }
 function reviewSummary(review: RunEvent["review"]): string { if (!review) return "Reviewer intentionally disabled"; if (review.decision === "pass") return `${pretty(review.accepted_action.type)} unchanged`; return `${pretty(review.proposed_action.type)} → ${pretty(review.accepted_action.type)}`; }
 function resultLabel(completion: RunEvent | undefined): { label: string; tone: "running" | "correct" | "incorrect" | "failed" } { if (!completion) return { label: "Running", tone: "running" }; if (completion.termination_reason !== "completed") return { label: "Failed", tone: "failed" }; if (completion.correct === true) return { label: "Correct", tone: "correct" }; if (completion.correct === false) return { label: "Incorrect", tone: "incorrect" }; return { label: "Completed", tone: "running" }; }

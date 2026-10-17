@@ -295,7 +295,21 @@ def _prepare_artifact_directory() -> None:
 
 
 def _write_artifacts(report: CalibrationReport) -> None:
-    _atomic_write("hstar.json", report.proposal.model_dump_json(indent=2))
+    _atomic_write(
+        "hstar.json",
+        json.dumps(
+            {
+                "schema_version": "hstar-evolution.v1",
+                "final_proposal_hash": report.proposal_hash,
+                "revisions": [
+                    revision.model_dump(mode="json")
+                    for revision in report.hstar_revisions
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+    )
     _atomic_write("kappa.json", report.kappa.model_dump_json(indent=2))
     _atomic_write("report.json", report.model_dump_json(indent=2))
 

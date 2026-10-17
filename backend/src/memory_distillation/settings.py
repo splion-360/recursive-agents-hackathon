@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     crusoe_student_max_output_tokens: int = Field(default=4_096, ge=64, le=4_096)
     crusoe_reviewer_max_output_tokens: int = Field(default=4_096, ge=64, le=4_096)
     crusoe_hstar_max_output_tokens: int = Field(default=8_192, ge=128, le=8_192)
+    crusoe_consolidator_max_output_tokens: int = Field(default=8_192, ge=128, le=8_192)
 
     openshell_sandbox_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,18}$")
     openshell_gateway: str = Field(default="nemoclaw", min_length=1)

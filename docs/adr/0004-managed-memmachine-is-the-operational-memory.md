@@ -14,7 +14,6 @@ Live verification on October 17, 2026 confirmed record round trips,
 idempotency, pagination, pinned retrieval, and project isolation. It also
 confirmed that the current public API exposes append, list/search, and delete,
 but no conditional update primitive. The adapter therefore reports
-`atomic_pointer_updates_supported = False` and refuses Accepted Version pointer
-changes with a typed error. Measured promotion must stop at preflight until a
-real compare-and-set primitive or another approved managed MemMachine mechanism
-is available; an append-only pointer record must not be presented as atomic.
+`atomic_pointer_updates_supported = False`. ADR 0013 supersedes the original
+promotion-blocking conclusion by defining a narrower, explicitly single-writer
+immutable transition protocol. Native compare-and-set remains unavailable.

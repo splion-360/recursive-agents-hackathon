@@ -12,10 +12,7 @@ import httpx2
 from pydantic import BaseModel, ConfigDict
 
 from memory_distillation.benchmark import Score, TaskInput
-from memory_distillation.operational_memory.memmachine import (
-    MemMachineAtomicityError,
-    MemMachineOperationalMemory,
-)
+from memory_distillation.operational_memory.memmachine import MemMachineOperationalMemory
 from memory_distillation.operational_memory.models import (
     EpisodeProvenance,
     ReviewedEpisode,
@@ -43,7 +40,7 @@ class MemMachineReport(BaseModel):
 
 
 def verify_live(memory: MemMachineOperationalMemory) -> MemMachineReport:
-    """Exercise typed storage, pagination, retrieval, immutability, and CAS blocking."""
+    """Exercise typed storage, retrieval, and single-writer promotion."""
 
     checks: dict[str, bool] = {}
     memory.initialize()
@@ -71,15 +68,10 @@ def verify_live(memory: MemMachineOperationalMemory) -> MemMachineReport:
         version_id=view.version_id,
         task=first_task,
     ) == ("largest bar category\nCompare every plotted bar before choosing the maximum.",)
-    try:
-        memory.compare_and_set_accepted(
-            expected="accepted-v000",
-            replacement=view.version_id,
-        )
-    except MemMachineAtomicityError:
-        checks["non_atomic_promotion_blocked"] = True
-    else:
-        checks["non_atomic_promotion_blocked"] = False
+    checks["single_writer_promotion"] = memory.compare_and_set_accepted(
+        expected="accepted-v000",
+        replacement=view.version_id,
+    ) and memory.accepted_version_id == view.version_id
     return MemMachineReport(checks=checks)
 
 

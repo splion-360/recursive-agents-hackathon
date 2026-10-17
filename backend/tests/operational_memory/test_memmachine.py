@@ -9,7 +9,6 @@ from pydantic import SecretStr
 from memory_distillation.benchmark import Score, TaskInput
 from memory_distillation.operational_memory import (
     EpisodeProvenance,
-    MemMachineAtomicityError,
     MemMachineError,
     MemMachineOperationalMemory,
     ReviewedEpisode,
@@ -190,12 +189,15 @@ def test_managed_records_round_trip_idempotently_across_pages() -> None:
             "largest value category\nCompare all plotted values before answering.",
         )
         assert memory.accepted_version_id == "accepted-v000"
-        with pytest.raises(MemMachineAtomicityError, match="no conditional update"):
-            memory.compare_and_set_accepted(
-                expected="accepted-v000", replacement=view.version_id
-            )
+        assert memory.compare_and_set_accepted(
+            expected="accepted-v000", replacement=view.version_id
+        )
+        assert memory.accepted_version_id == view.version_id
+        assert not memory.compare_and_set_accepted(
+            expected="accepted-v000", replacement=view.version_id
+        )
 
-    assert len(memories) == 5
+    assert len(memories) == 6
 
 
 def test_managed_record_identity_rejects_changed_content_and_duplicates() -> None:

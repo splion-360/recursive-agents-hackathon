@@ -319,7 +319,7 @@ def test_nonretryable_provider_failure_is_typed_and_secret_free() -> None:
     assert "fixture-secret" not in str(captured.value)
 
 
-def test_uncertain_submission_prevents_further_requests() -> None:
+def test_response_read_timeout_is_retried_for_pure_inference() -> None:
     attempts = 0
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -327,7 +327,39 @@ def test_uncertain_submission_prevents_further_requests() -> None:
         if request.url.path.endswith("/models"):
             return _catalog_response()
         attempts += 1
-        raise httpx2.ReadTimeout("response outcome unknown", request=request)
+        if attempts == 1:
+            raise httpx2.ReadTimeout("response outcome unknown", request=request)
+        return _completion_response()
+
+    with CrusoeClient(
+        base_url="https://inference.example.test/v1",
+        api_key=SecretStr("fixture-secret"),
+        budget=CrusoeBudget(max_cost_usd=Decimal("0.01"), max_total_tokens=1000),
+        transport=httpx2.MockTransport(handler),
+        max_retries=1,
+        retry_backoff_seconds=0,
+    ) as client:
+        result = client.complete_json(
+            model_id="fixture/model",
+            messages=({"role": "user", "content": "Return ok."},),
+            output_type=FixtureOutput,
+            max_output_tokens=16,
+            seed=17,
+        )
+
+    assert attempts == 2
+    assert result.retry_count == 1
+
+
+def test_partial_write_failure_prevents_further_requests() -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        if request.url.path.endswith("/models"):
+            return _catalog_response()
+        attempts += 1
+        raise httpx2.WriteError("request outcome unknown", request=request)
 
     with CrusoeClient(
         base_url="https://inference.example.test/v1",
@@ -500,7 +532,57 @@ def test_reviewer_uses_kappa_and_returns_a_typed_replacement() -> None:
     assert "synthetic-image" not in serialized
 
 
-def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> None:
+def test_reviewer_rejects_direct_answer_to_direct_answer_replacement() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/models"):
+            return _catalog_response(model_id="nvidia/fixture-nemotron-vl", modality="multimodal")
+        return _completion_response(
+            content=(
+                '{"decision":"replace","accepted_action_type":"final_answer",'
+                '"answer":"corrected","code":null,"x0":null,"y0":null,'
+                '"x1":null,"y1":null,"private_reason":"Unsupported answer."}'
+            ),
+            model_id="nvidia/fixture-nemotron-vl",
+        )
+
+    task = TaskInput(
+        task_id="chartqa:fixture:direct-answer",
+        question="What is shown?",
+        image_asset_id="fixture.png",
+        image_sha256="a" * 64,
+        source_split="train",
+    )
+    asset = TaskAsset(
+        task_id=task.task_id,
+        media_type="image/png",
+        image_sha256=task.image_sha256,
+        content=b"synthetic-image",
+    )
+    with CrusoeClient(
+        base_url="https://inference.example.test/v1",
+        api_key=SecretStr("fixture-secret"),
+        budget=CrusoeBudget(max_total_tokens=5000),
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        reviewer = CrusoeReviewer(
+            client=client,
+            model_id="nvidia/fixture-nemotron-vl",
+            max_output_tokens=128,
+        )
+        with pytest.raises(ValueError, match="evidence-gathering action"):
+            reviewer.review(
+                ReviewRequest(
+                    task=task,
+                    asset=asset,
+                    proposed_action=FinalAnswerAction(answer="wrong"),
+                    observations=(),
+                    guidance=("Gather evidence before answering.",),
+                    turn_index=0,
+                )
+            )
+
+
+def test_hstar_analyst_binds_revision_lineage_from_the_trusted_request() -> None:
     submitted: dict[str, Any] = {}
     discovery_ids = tuple(f"d{index}" for index in range(8))
 
@@ -511,7 +593,7 @@ def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> No
         return _completion_response(
             content=json.dumps(
                 {
-                    "proposal_id": "hstar-1",
+                    "proposal_id": "hstar-2",
                     "parent_revision": 0,
                     "revision": 1,
                     "rules": [
@@ -522,7 +604,7 @@ def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> No
                             "instruction": "Verify chart labels before answering.",
                         }
                     ],
-                    "discovery_task_ids": discovery_ids,
+                    "discovery_task_ids": discovery_ids[:4],
                 }
             ),
             model_id="fixture/hstar",
@@ -530,6 +612,7 @@ def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> No
 
     analysis_request = HStarAnalysisRequest(
         manifest_hash="m" * 64,
+            round_index=2,
         discovery_task_ids=discovery_ids,
         observations=tuple(
             DiscoveryObservation(
@@ -555,6 +638,8 @@ def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> No
         ).propose(analysis_request, seed=17)
 
     assert result.proposal.discovery_task_ids == discovery_ids
+    assert result.proposal.parent_revision == 1
+    assert result.proposal.revision == 2
     assert result.proposal.rules[0].rule_id == "verify-labels"
     serialized = json.dumps(submitted)
     assert "What is shown?" in serialized

@@ -1,4 +1,4 @@
-"""One-revision live H-star/Kappa calibration orchestration."""
+"""Three-round live H-star evolution and sealed Kappa calibration."""
 
 import hashlib
 import json
@@ -15,6 +15,7 @@ from memory_distillation.calibration.models import (
     CalibrationReport,
     HStarAnalysisRequest,
     HStarAnalyst,
+    HStarRevision,
     ModelIdentities,
     PilotIntervention,
     PilotSummary,
@@ -85,7 +86,7 @@ def calibrate_review_policy(
     seed: int = 17,
     pilot_tasks: int = 3,
 ) -> CalibrationReport:
-    """Run isolated discovery, one proposal, sealed regression, and a frozen pilot."""
+    """Run three discovery evolutions, sealed regression, and a frozen pilot."""
 
     if not 3 <= pilot_tasks <= 5:
         raise ValueError("pilot_tasks must be between three and five")
@@ -116,12 +117,14 @@ def calibrate_review_policy(
 
     progress("preflight", "Loading the isolated discovery manifest.")
     discovery = source.load_calibration_discovery()
-    _require_eight("discovery", discovery)
+    _require_twelve("discovery", discovery)
     discovery_baselines: list[TaskRun] = []
+    revisions: list[HStarRevision] = []
+    proposal: HStarProposal | None = None
     for index, task in enumerate(discovery, start=1):
         progress(
             "discovery",
-            f"Running discovery baseline {index} of 8.",
+            f"Running discovery baseline {index} of 12.",
             discovery_completed=index - 1,
             current_task_id=task.task_id,
         )
@@ -132,27 +135,64 @@ def calibrate_review_policy(
             seed=seed + index - 1,
         )
         discovery_baselines.append(run)
-        record(run, outcome(run, phase="discovery", condition="baseline"))
+        record(
+            run,
+            outcome(
+                run,
+                phase="discovery",
+                condition="baseline",
+                require_complete=False,
+            ),
+        )
+        if index % 4 == 0:
+            round_index = index // 4
+            visible_tasks = discovery[:index]
+            analysis = analyst.propose(
+                HStarAnalysisRequest(
+                    manifest_hash=manifest_hash,
+                    round_index=round_index,
+                    discovery_task_ids=tuple(item.task_id for item in visible_tasks),
+                    observations=discovery_observations(
+                        visible_tasks, tuple(discovery_baselines)
+                    ),
+                    prior_proposal=proposal,
+                ),
+                seed=seed + round_index - 1,
+            )
+            proposal = HStarProposal.model_validate(
+                analysis.proposal.model_dump(mode="json")
+            )
+            if proposal.revision != round_index or proposal.parent_revision != round_index - 1:
+                raise ValueError("H-star proposal revision chain is invalid")
+            if proposal.discovery_task_ids != tuple(item.task_id for item in visible_tasks):
+                raise ValueError("H-star proposal does not bind visible discovery evidence")
+            proposal_hash = hash_hstar_proposal(proposal)
+            revisions.append(
+                HStarRevision(
+                    round_index=round_index,
+                    task_ids=tuple(item.task_id for item in discovery[index - 4 : index]),
+                    proposal=proposal,
+                    proposal_hash=proposal_hash,
+                )
+            )
+            total_input += analysis.input_tokens
+            total_output += analysis.output_tokens
+            total_elapsed += analysis.latency_ms
+            progress(
+                "hstar_proposal",
+                f"H-star revision {round_index} of 3 frozen.",
+                discovery_completed=index,
+                proposal=proposal,
+                proposal_hash=proposal_hash,
+            )
 
-    analysis = analyst.propose(
-        HStarAnalysisRequest(
-            manifest_hash=manifest_hash,
-            discovery_task_ids=tuple(task.task_id for task in discovery),
-            observations=discovery_observations(discovery, tuple(discovery_baselines)),
-        ),
-        seed=seed,
-    )
-    proposal = HStarProposal.model_validate(analysis.proposal.model_dump(mode="json"))
-    if proposal.discovery_task_ids != tuple(task.task_id for task in discovery):
-        raise ValueError("H-star proposal does not bind the exact discovery split")
+    if proposal is None:
+        raise RuntimeError("H-star evolution produced no proposal")
     proposal_hash = hash_hstar_proposal(proposal)
-    total_input += analysis.input_tokens
-    total_output += analysis.output_tokens
-    total_elapsed += analysis.latency_ms
     progress(
         "hstar_proposal",
-        "Proposal frozen; evaluating its rules on discovery evidence.",
-        discovery_completed=8,
+        "Final H-star proposal frozen; evaluating it on discovery evidence.",
+        discovery_completed=12,
         proposal=proposal,
         proposal_hash=proposal_hash,
     )
@@ -160,7 +200,7 @@ def calibrate_review_policy(
     # Regression inputs remain invisible to H-star and are loaded only after its
     # proposal has been parsed and canonically bound.
     regression = source.load_calibration_regression()
-    _require_eight("regression", regression)
+    _require_twelve("regression", regression)
     split = CalibrationSplit(
         manifest_hash=manifest_hash,
         discovery_task_ids=tuple(task.task_id for task in discovery),
@@ -204,6 +244,7 @@ def calibrate_review_policy(
                     phase="discovery",
                     condition="candidate",
                     rule_id=rule.rule_id,
+                    require_complete=False,
                 ),
             )
             executions.append(
@@ -220,8 +261,8 @@ def calibrate_review_policy(
     for index, task in enumerate(regression, start=1):
         progress(
             "regression",
-            f"Running sealed regression baseline {index} of 8.",
-            discovery_completed=8,
+            f"Running sealed regression baseline {index} of 12.",
+            discovery_completed=12,
             regression_completed=0,
             proposal=proposal,
             proposal_hash=proposal_hash,
@@ -234,7 +275,15 @@ def calibrate_review_policy(
             seed=seed + 100 + index - 1,
         )
         regression_baselines.append(run)
-        record(run, outcome(run, phase="regression", condition="baseline"))
+        record(
+            run,
+            outcome(
+                run,
+                phase="regression",
+                condition="baseline",
+                require_complete=False,
+            ),
+        )
 
     baseline_by_regression = {run.task_id: run for run in regression_baselines}
     candidate_rules = () if proposal_rejection else proposal.rules
@@ -258,6 +307,7 @@ def calibrate_review_policy(
                     phase="regression",
                     condition="candidate",
                     rule_id=rule.rule_id,
+                    require_complete=False,
                 ),
             )
             executions.append(
@@ -272,8 +322,8 @@ def calibrate_review_policy(
             if rule_index == len(proposal.rules) - 1:
                 progress(
                     "regression",
-                    f"Completed regression task {index} of 8.",
-                    discovery_completed=8,
+                    f"Completed regression task {index} of 12.",
+                    discovery_completed=12,
                     regression_completed=index,
                     proposal=proposal,
                     proposal_hash=proposal_hash,
@@ -302,8 +352,8 @@ def calibrate_review_policy(
     progress(
         "kappa_freeze",
         fallback_reason or "Regression-screened Kappa guidance is frozen.",
-        discovery_completed=8,
-        regression_completed=8,
+        discovery_completed=12,
+        regression_completed=12,
         proposal=proposal,
         proposal_hash=proposal_hash,
         kappa=kappa,
@@ -317,8 +367,8 @@ def calibrate_review_policy(
         progress(
             "smoke_test",
             f"Running frozen Kappa pilot {index} of {pilot_tasks}.",
-            discovery_completed=8,
-            regression_completed=8,
+            discovery_completed=12,
+            regression_completed=12,
             smoke_completed=index - 1,
             smoke_total=pilot_tasks,
             proposal=proposal,
@@ -372,8 +422,8 @@ def calibrate_review_policy(
     progress(
         "complete",
         fallback_reason or "Calibration complete; frozen Kappa is ready for Collection.",
-        discovery_completed=8,
-        regression_completed=8,
+        discovery_completed=12,
+        regression_completed=12,
         smoke_completed=pilot_tasks,
         smoke_total=pilot_tasks,
         proposal=proposal,
@@ -386,6 +436,7 @@ def calibrate_review_policy(
         split=split,
         proposal=proposal,
         proposal_hash=proposal_hash,
+        hstar_revisions=tuple(revisions),
         kappa=kappa,
         fallback_reason=fallback_reason,
         models=models,
@@ -404,7 +455,13 @@ def calibrate_review_policy(
         pilot_summary=PilotSummary(
             task_count=pilot_tasks,
             baseline_correct=sum(
-                outcome(run, phase="discovery", condition="baseline").correct is True
+                outcome(
+                    run,
+                    phase="discovery",
+                    condition="baseline",
+                    require_complete=False,
+                ).correct
+                is True
                 for run in discovery_baselines[:pilot_tasks]
             ),
             kappa_correct=sum(
@@ -428,7 +485,13 @@ def calibrate_review_policy(
                 for run in pilot_runs
             )
             - sum(
-                outcome(run, phase="discovery", condition="baseline").correct is True
+                outcome(
+                    run,
+                    phase="discovery",
+                    condition="baseline",
+                    require_complete=False,
+                ).correct
+                is True
                 for run in discovery_baselines[:pilot_tasks]
             ),
             review_calls=sum(run.review_calls for run in pilot_runs),
@@ -455,9 +518,9 @@ def combined_manifest_hash(discovery_hash: str, regression_hash: str) -> str:
     ).hexdigest()
 
 
-def _require_eight(name: str, tasks: tuple[TaskInput, ...]) -> None:
-    if len(tasks) != 8 or len({task.task_id for task in tasks}) != 8:
-        raise ValueError(f"{name} calibration split must contain eight unique tasks")
+def _require_twelve(name: str, tasks: tuple[TaskInput, ...]) -> None:
+    if len(tasks) != 12 or len({task.task_id for task in tasks}) != 12:
+        raise ValueError(f"{name} calibration split must contain twelve unique tasks")
 
 
 def _execution(
@@ -468,10 +531,12 @@ def _execution(
     baseline: TaskRun,
     candidate: TaskRun,
 ) -> CalibrationExecution:
-    baseline_outcome = outcome(baseline, phase=phase, condition="baseline")
-    candidate_outcome = outcome(candidate, phase=phase, condition="candidate")
-    if baseline_outcome.correct is None or candidate_outcome.correct is None:
-        raise RuntimeError("calibration evidence requires completed paired outcomes")
+    baseline_outcome = outcome(
+        baseline, phase=phase, condition="baseline", require_complete=False
+    )
+    candidate_outcome = outcome(
+        candidate, phase=phase, condition="candidate", require_complete=False
+    )
     return CalibrationExecution(
         execution_id=f"{proposal_hash[:12]}:{rule.rule_id}:{phase}:{baseline.task_id}",
         proposal_hash=proposal_hash,
@@ -482,6 +547,6 @@ def _execution(
             dict.fromkeys(review.accepted_action.type for review in candidate.reviews)
         )
         or tuple(dict.fromkeys(action.type for action in candidate.actions)),
-        baseline_correct=baseline_outcome.correct,
-        candidate_correct=candidate_outcome.correct,
+        baseline_correct=baseline_outcome.correct is True,
+        candidate_correct=candidate_outcome.correct is True,
     )

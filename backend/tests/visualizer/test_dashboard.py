@@ -25,9 +25,16 @@ def test_dashboard_starts_truthfully_without_measured_results() -> None:
     assert payload["accepted_version"] == "accepted-v000"
     assert payload["accepted_card_count"] == 0
     assert payload["measured_results_available"] is False
+    assert len(payload["calibration_tasks"]) == 24
+    assert {item["phase"] for item in payload["calibration_tasks"]} == {
+        "discovery",
+        "regression",
+    }
+    assert len(payload["run_events"]) == payload["event_count"]
+    assert "recent_events" not in payload
     assert {item["name"]: item["task_count"] for item in payload["manifests"]} == {
-        "calibration_discovery": 8,
-        "calibration_regression": 8,
+        "calibration_discovery": 12,
+        "calibration_regression": 12,
         "collection": 40,
         "promotion": 30,
         "final": 60,
@@ -35,6 +42,13 @@ def test_dashboard_starts_truthfully_without_measured_results() -> None:
     serialized = json.dumps(payload).casefold()
     assert "api_key" not in serialized
     assert "private_reason" not in serialized
+    assert {item["role"] for item in payload["harnesses"]} == {
+        "student",
+        "reviewer",
+        "hstar",
+        "kappa",
+    }
+    assert payload["split_totals"] == {"discovery": 12, "regression": 12}
 
 
 def test_shell_runner_status_is_written_atomically(
