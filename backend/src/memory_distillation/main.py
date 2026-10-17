@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from memory_distillation.operational_memory import MemMachineOperationalMemory
 from memory_distillation.sandbox import OpenShellSandbox
 from memory_distillation.settings import Settings, get_settings
 from memory_distillation.visualizer import (
@@ -35,9 +36,22 @@ def create_production_sandbox(settings: Settings) -> OpenShellSandbox | None:
     )
 
 
+def create_production_memory(settings: Settings) -> MemMachineOperationalMemory | None:
+    """Compose managed Operational Memory only when its credential is configured."""
+
+    if settings.memmachine_api_key is None:
+        return None
+    return MemMachineOperationalMemory(
+        base_url=str(settings.memmachine_base_url),
+        api_key=settings.memmachine_api_key,
+        project_id=settings.memmachine_project_id,
+    )
+
+
 app = FastAPI(title="Memory-Distilled Agent Team")
 app.state.settings = get_settings()
 app.state.sandbox = create_production_sandbox(app.state.settings)
+app.state.operational_memory = create_production_memory(app.state.settings)
 
 
 @app.get("/health", response_model=HealthResponse)

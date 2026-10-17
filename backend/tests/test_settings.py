@@ -3,7 +3,12 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from memory_distillation.main import app, create_production_sandbox
+from memory_distillation.main import (
+    app,
+    create_production_memory,
+    create_production_sandbox,
+)
+from memory_distillation.operational_memory import MemMachineOperationalMemory
 from memory_distillation.sandbox import OpenShellSandbox
 from memory_distillation.settings import Settings, get_settings
 
@@ -16,7 +21,6 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
                 "MEMMACHINE_BASE_URL=https://memory.example.test",
                 "MEMMACHINE_API_KEY=memory-secret",
                 "MEMMACHINE_PROJECT_ID=project-1",
-                "MEMMACHINE_ORG_ID=org-1",
                 "CRUSOE_BASE_URL=https://inference.example.test/v1",
                 "CRUSOE_API_KEY=crusoe-secret",
                 "CRUSOE_STUDENT_MODEL=student-v1",
@@ -35,7 +39,6 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
     assert str(settings.memmachine_base_url) == "https://memory.example.test/"
     assert settings.memmachine_api_key == SecretStr("memory-secret")
     assert settings.memmachine_project_id == "project-1"
-    assert settings.memmachine_org_id == "org-1"
     assert str(settings.crusoe_base_url) == "https://inference.example.test/v1"
     assert settings.crusoe_api_key == SecretStr("crusoe-secret")
     assert settings.crusoe_student_model == "student-v1"
@@ -91,3 +94,16 @@ def test_production_composition_uses_configured_openshell_sandbox(tmp_path: Path
     sandbox = create_production_sandbox(Settings(_env_file=env_file))  # type: ignore[call-arg]
 
     assert isinstance(sandbox, OpenShellSandbox)
+
+
+def test_production_composition_uses_configured_managed_memory(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "MEMMACHINE_API_KEY=fixture-secret\nMEMMACHINE_PROJECT_ID=fixture-project\n"
+    )
+    settings = Settings(_env_file=env_file)  # type: ignore[call-arg]
+
+    memory = create_production_memory(settings)
+
+    assert isinstance(memory, MemMachineOperationalMemory)
+    memory.close()

@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     memmachine_base_url: AnyHttpUrl = AnyHttpUrl("https://api.memmachine.ai")
     memmachine_api_key: SecretStr | None = None
     memmachine_project_id: str = "recursive-agents-hackathon"
-    memmachine_org_id: str | None = None
 
     crusoe_base_url: AnyHttpUrl = AnyHttpUrl("https://api.inference.crusoecloud.com/v1")
     crusoe_api_key: SecretStr | None = None
