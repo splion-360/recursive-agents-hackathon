@@ -35,6 +35,7 @@ class KappaRule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     rule_id: str
+    source_component: Literal["tools", "middleware", "skills", "failure_memory"] = "skills"
     action_types: tuple[ActionType, ...] = Field(min_length=1)
     instruction: str = Field(min_length=1, max_length=500)
 
@@ -47,6 +48,12 @@ class HStarProposal(BaseModel):
     revision: Literal[1] = 1
     rules: tuple[KappaRule, ...] = Field(min_length=1, max_length=8)
     discovery_task_ids: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def require_component_provenance(self) -> "HStarProposal":
+        if any("source_component" not in rule.model_fields_set for rule in self.rules):
+            raise ValueError("H-star rules require explicit source_component provenance")
+        return self
 
 
 class RuleEvidence(BaseModel):
@@ -71,7 +78,7 @@ class CalibrationExecution(BaseModel):
     phase: Literal["discovery", "regression"]
     task_id: str
     rule_id: str
-    action_type: ActionType
+    action_types: tuple[ActionType, ...] = Field(min_length=1)
     baseline_correct: bool
     candidate_correct: bool
 
@@ -208,6 +215,17 @@ def freeze_minimal_kappa(split: CalibrationSplit) -> KappaArtifact:
     )
 
 
+def validate_hstar_proposal(
+    proposal: HStarProposal, privacy: CalibrationPrivacyContext
+) -> None:
+    """Reject unsupported or calibration-specific H-star guidance before execution."""
+
+    rule_ids = [rule.rule_id for rule in proposal.rules]
+    if len(set(rule_ids)) != len(rule_ids):
+        raise ValueError("Kappa rule identifiers must be unique")
+    _validate_privacy(proposal.rules, privacy)
+
+
 def _freeze_kappa(
     *,
     proposal: HStarProposal,
@@ -222,9 +240,7 @@ def _freeze_kappa(
     proposal_hash = hash_hstar_proposal(proposal)
     if any(item.proposal_hash != proposal_hash for item in executions):
         raise ValueError("calibration executions do not match the exact H-star proposal")
-    rule_ids = [rule.rule_id for rule in proposal.rules]
-    if len(set(rule_ids)) != len(rule_ids):
-        raise ValueError("Kappa rule identifiers must be unique")
+    validate_hstar_proposal(proposal, privacy)
     evidence = _derive_evidence(proposal=proposal, split=split, executions=executions)
     by_rule = {item.rule_id: item for item in evidence}
     accepted = tuple(
@@ -236,12 +252,13 @@ def _freeze_kappa(
     )
     if not accepted:
         raise ValueError("no Kappa rule demonstrated measured regression improvement")
-    _validate_privacy(accepted, privacy)
+    accepted_ids = {rule.rule_id for rule in accepted}
+    accepted_evidence = tuple(item for item in evidence if item.rule_id in accepted_ids)
     canonical_payload = {
         "manifest_hash": split.manifest_hash,
         "revision": proposal.revision,
         "rules": [item.model_dump(mode="json") for item in accepted],
-        "evidence": [item.model_dump(mode="json") for item in evidence],
+        "evidence": [item.model_dump(mode="json") for item in accepted_evidence],
     }
     digest = _hash_json(canonical_payload)
     return KappaArtifact(
@@ -250,7 +267,7 @@ def _freeze_kappa(
         revision=proposal.revision,
         rules=accepted,
         guidance=tuple(rule.instruction for rule in accepted),
-        evidence=evidence,
+        evidence=accepted_evidence,
         content_hash=digest,
     )
 
@@ -283,7 +300,9 @@ def _derive_evidence(
             raise ValueError("rule executions do not cover the regression split")
         if len(discovery) != 8 or len(regression) != 8:
             raise ValueError("every calibration task must execute exactly once per rule")
-        compatible = all(item.action_type in rule.action_types for item in rule_runs)
+        compatible = all(
+            set(item.action_types).issubset(rule.action_types) for item in rule_runs
+        )
         evidence.append(
             RuleEvidence(
                 rule_id=rule.rule_id,

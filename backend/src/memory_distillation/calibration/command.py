@@ -2,13 +2,16 @@
 
 import argparse
 import json
+import subprocess
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from memory_distillation.benchmark import DevelopmentBenchmark
 from memory_distillation.benchmark.manifests import load_manifest
 from memory_distillation.calibration.models import (
     CalibrationProgress,
+    CalibrationProvenance,
     CalibrationReport,
     ModelIdentities,
 )
@@ -21,10 +24,10 @@ from memory_distillation.inference import (
     CrusoeReviewer,
     CrusoeStudentInference,
 )
-from memory_distillation.inference.crusoe import build_crusoe_client
+from memory_distillation.inference.crusoe import CrusoeModel, build_crusoe_client
 from memory_distillation.sandbox import OpenShellSandbox
 from memory_distillation.settings import Settings, get_settings
-from memory_distillation.task_execution import TaskExecutor
+from memory_distillation.task_execution import ExecutionPolicy, TaskExecutor
 from memory_distillation.telemetry import JsonlEventSink
 from memory_distillation.visualizer import (
     CALIBRATION_EVENTS_PATH,
@@ -147,6 +150,11 @@ def run_live_calibration(
     )
     try:
         with build_crusoe_client(settings) as client:
+            identities = ModelIdentities(
+                student=_model_identity(client.get_model(student_model)),
+                reviewer=_model_identity(client.get_model(reviewer_model)),
+                hstar=_model_identity(client.get_model(hstar_model)),
+            )
             student = CrusoeStudentInference(
                 client=client,
                 model_id=student_model,
@@ -178,10 +186,16 @@ def run_live_calibration(
                 executor=executor,
                 analyst=analyst,
                 manifest_hash=manifest_hash,
-                models=ModelIdentities(
-                    student=student_model,
-                    reviewer=reviewer_model,
-                    hstar=hstar_model,
+                models=identities,
+                provenance=CalibrationProvenance(
+                    code_revision=_code_revision(),
+                    seed=seed,
+                    execution_policy=ExecutionPolicy().model_dump(mode="json"),
+                    student_max_output_tokens=settings.crusoe_student_max_output_tokens,
+                    reviewer_max_output_tokens=settings.crusoe_reviewer_max_output_tokens,
+                    hstar_max_output_tokens=settings.crusoe_hstar_max_output_tokens,
+                    sandbox_name=sandbox_name,
+                    inference_base_url=str(settings.crusoe_base_url),
                 ),
                 publish=publisher.publish,
                 cost_meter=lambda: client.spent_cost_usd,
@@ -205,22 +219,57 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dataset-root", type=Path, default=_DEFAULT_DATASET_ROOT)
     parser.add_argument("--manifest-dir", type=Path, default=_DEFAULT_MANIFEST_DIR)
     parser.add_argument("--seed", type=int, default=17)
-    parser.add_argument("--pilot-tasks", type=int, choices=range(1, 6), default=3)
+    parser.add_argument("--pilot-tasks", type=int, choices=range(3, 6), default=3)
     parser.add_argument(
         "--run-id",
         default=None,
         help="Stable run identity; defaults to a UTC timestamp.",
     )
     args = parser.parse_args(argv)
-    if not args.confirm_paid_run:
-        parser.error("--confirm-paid-run is required before paid inference")
-    run_id = args.run_id or datetime.now(UTC).strftime("calibration-%Y%m%dT%H%M%SZ")
     settings = get_settings()
-    print(
-        "Starting paid calibration with hard ceilings: "
-        f"cost=${settings.crusoe_max_cost_usd}, "
-        f"tokens={settings.crusoe_max_total_tokens}, pilot_tasks={args.pilot_tasks}"
+    student_model = _required(settings.crusoe_student_model, "CRUSOE_STUDENT_MODEL")
+    reviewer_model = _required(settings.crusoe_reviewer_model, "CRUSOE_REVIEWER_MODEL")
+    hstar_model = _required(settings.crusoe_hstar_model, "CRUSOE_HSTAR_MODEL")
+    sandbox_name = _required(settings.openshell_sandbox_name, "OPENSHELL_SANDBOX_NAME")
+    policy = ExecutionPolicy()
+    max_requests = (
+        16 * policy.max_actions
+        + 16 * (policy.max_actions + policy.max_review_calls)
+        + args.pilot_tasks * (policy.max_actions + policy.max_review_calls)
+        + 1
     )
+    with build_crusoe_client(settings) as preflight_client:
+        preflight_models = tuple(
+            preflight_client.get_model(model_id)
+            for model_id in (student_model, reviewer_model, hstar_model)
+        )
+    resolved_identities = tuple(_model_identity(model) for model in preflight_models)
+    max_token_price = max(
+        price
+        for model in preflight_models
+        for price in (model.pricing.prompt, model.pricing.completion)
+    )
+    estimated_upper_cost = min(
+        settings.crusoe_max_cost_usd,
+        Decimal(settings.crusoe_max_total_tokens) * max_token_price / Decimal(1_000_000),
+    )
+    print(
+        "Calibration preflight:\n"
+        f"  student={resolved_identities[0]}\n"
+        f"  reviewer={resolved_identities[1]}\n"
+        f"  hstar={resolved_identities[2]}\n"
+        f"  sandbox={sandbox_name}\n"
+        f"  hard_cost_ceiling=${settings.crusoe_max_cost_usd}\n"
+        f"  hard_token_ceiling={settings.crusoe_max_total_tokens}\n"
+        f"  conservative_cost_range=$0.00-${estimated_upper_cost}\n"
+        f"  worst_case_model_requests={max_requests}\n"
+        f"  artifact_write_scope={CALIBRATION_ARTIFACT_DIR}\n"
+        f"  pilot_tasks={args.pilot_tasks}"
+    )
+    if not args.confirm_paid_run:
+        print("Dry preflight only; rerun with --confirm-paid-run to execute paid calls.")
+        return
+    run_id = args.run_id or datetime.now(UTC).strftime("calibration-%Y%m%dT%H%M%SZ")
     report = run_live_calibration(
         settings,
         run_id=run_id,
@@ -248,15 +297,7 @@ def main(argv: list[str] | None = None) -> None:
 
 def _prepare_artifact_directory() -> None:
     CALIBRATION_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    conflicts = tuple(
-        path
-        for path in (
-            CALIBRATION_EVENTS_PATH,
-            CALIBRATION_ARTIFACT_DIR / "status.json",
-            CALIBRATION_ARTIFACT_DIR / "report.json",
-        )
-        if path.exists()
-    )
+    conflicts = tuple(CALIBRATION_ARTIFACT_DIR.iterdir())
     if conflicts:
         names = ", ".join(path.name for path in conflicts)
         raise FileExistsError(
@@ -281,3 +322,20 @@ def _required(value: str | None, name: str) -> str:
     if value is None:
         raise ValueError(f"{name} is required")
     return value
+
+
+def _model_identity(model: CrusoeModel) -> str:
+    model_id = model.id
+    revision = model.model_revision
+    return f"{model_id}@{revision}" if revision else model_id
+
+
+def _code_revision() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=_REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()

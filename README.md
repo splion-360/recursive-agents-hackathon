@@ -35,11 +35,14 @@ by Vite. Run the paid calibration separately so its progress remains visible:
 
 ```bash
 cd backend
+uv run memory-distillation calibrate
 uv run memory-distillation calibrate --confirm-paid-run
 ```
 
-The command prints the configured cost and token ceilings before making any
-inference call. It exposes only the eight discovery tasks to H-star, freezes one
+The first command is a no-cost preflight that prints the resolved models,
+sandbox, hard cost and token ceilings, worst-case request count, and artifact
+write scope. The confirmation flag is required for paid execution. The run
+exposes only the eight discovery tasks to H-star, freezes one
 proposal, then loads the separate eight-task regression split. It writes public
 `RunEvent` telemetry and status under `.artifacts/calibration/current/`; the
 dashboard streams those files through FastAPI. Private Reviewer reasoning,

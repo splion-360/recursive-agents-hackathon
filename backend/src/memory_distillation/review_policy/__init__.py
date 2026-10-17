@@ -12,6 +12,7 @@ from memory_distillation.review_policy.kappa import (
     freeze_kappa,
     freeze_minimal_kappa,
     hash_hstar_proposal,
+    validate_hstar_proposal,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "freeze_kappa",
     "freeze_minimal_kappa",
     "hash_hstar_proposal",
+    "validate_hstar_proposal",
 ]

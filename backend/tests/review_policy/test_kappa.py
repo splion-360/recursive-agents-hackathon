@@ -88,7 +88,7 @@ def _executions_for_proposal(
                 phase="discovery",
                 task_id=task_id,
                 rule_id=rule.rule_id,
-                action_type=rule.action_types[0],
+                action_types=(rule.action_types[0],),
                 baseline_correct=False,
                 candidate_correct=index < discovery_helped,
             )
@@ -103,7 +103,7 @@ def _executions_for_proposal(
                 phase="regression",
                 task_id=task_id,
                 rule_id=rule.rule_id,
-                action_type=rule.action_types[0],
+                action_types=(rule.action_types[0],),
                 baseline_correct=harmed,
                 candidate_correct=helped,
             )
@@ -115,11 +115,13 @@ def test_kappa_is_deterministic_frozen_and_regression_screened() -> None:
     split = _split()
     accepted_rule = KappaRule(
         rule_id="verify-labels",
+        source_component="skills",
         action_types=("inspect_image", "crop"),
         instruction="Verify extracted labels before arithmetic.",
     )
     rejected_rule = KappaRule(
         rule_id="always-replace",
+        source_component="failure_memory",
         action_types=("final_answer",),
         instruction="Always replace the final answer.",
     )
@@ -156,6 +158,7 @@ def test_kappa_is_deterministic_frozen_and_regression_screened() -> None:
 
     assert first == second
     assert first.rules == (accepted_rule,)
+    assert tuple(item.rule_id for item in first.evidence) == (accepted_rule.rule_id,)
     assert first.guidance == (accepted_rule.instruction,)
     assert len(first.content_hash) == 64
     with pytest.raises(ValidationError):
@@ -187,6 +190,7 @@ def test_kappa_artifact_revalidates_accepted_rule_evidence(
     split = _split()
     rule = KappaRule(
         rule_id="verify",
+        source_component="skills",
         action_types=("inspect_image",),
         instruction="Verify chart labels.",
     )
@@ -216,6 +220,7 @@ def test_kappa_artifact_requires_one_evidence_record_per_accepted_rule() -> None
     split = _split()
     rule = KappaRule(
         rule_id="verify",
+        source_component="skills",
         action_types=("inspect_image",),
         instruction="Verify chart labels.",
     )
@@ -250,6 +255,7 @@ def test_calibration_isolation_evidence_and_privacy_fail_closed() -> None:
     split = _split()
     leaking_rule = KappaRule(
         rule_id="leak",
+        source_component="failure_memory",
         action_types=("final_answer",),
         instruction="Open the browser and return 42 for fixture.png.",
     )
@@ -274,11 +280,30 @@ def test_calibration_isolation_evidence_and_privacy_fail_closed() -> None:
             privacy=CalibrationPrivacyContext(forbidden_phrases=("42", "fixture.png")),
         )
 
+    safe_rule = KappaRule(
+        rule_id="safe",
+        source_component="skills",
+        action_types=("final_answer",),
+        instruction="Verify the calculation before answering.",
+    )
+    safe_proposal = HStarProposal(
+        proposal_id="safe",
+        rules=(safe_rule,),
+        discovery_task_ids=split.discovery_task_ids,
+    )
+    safe_executions = _executions_for_proposal(
+        split,
+        safe_proposal,
+        safe_rule,
+        discovery_helped=1,
+        regression_helped=1,
+        regression_harmed=0,
+    )
     with pytest.raises(ValueError, match="regression split"):
         freeze_kappa(
             session=KappaCalibrationSession(split),
-            proposal=proposal,
-            executions=executions[:-1],
+            proposal=safe_proposal,
+            executions=safe_executions[:-1],
             privacy=CalibrationPrivacyContext(forbidden_phrases=("never matches",)),
         )
 
@@ -287,6 +312,7 @@ def test_calibration_session_rejects_a_second_proposal() -> None:
     split = _split()
     rule = KappaRule(
         rule_id="verify",
+        source_component="skills",
         action_types=("inspect_image",),
         instruction="Verify chart labels.",
     )
@@ -322,6 +348,7 @@ def test_kappa_requires_strict_regression_improvement() -> None:
     split = _split()
     rule = KappaRule(
         rule_id="neutral",
+        source_component="skills",
         action_types=("inspect_image",),
         instruction="Inspect the chart.",
     )
@@ -350,6 +377,7 @@ def test_failed_kappa_attempt_is_terminal() -> None:
     split = _split()
     rule = KappaRule(
         rule_id="leak",
+        source_component="failure_memory",
         action_types=("inspect_image",),
         instruction="Inspect fixture.png before answering.",
     )

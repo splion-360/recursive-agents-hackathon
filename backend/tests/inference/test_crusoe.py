@@ -445,6 +445,7 @@ def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> No
                     "rules": [
                         {
                             "rule_id": "verify-labels",
+                            "source_component": "skills",
                             "action_types": ["inspect_image", "final_answer"],
                             "instruction": "Verify chart labels before answering.",
                         }

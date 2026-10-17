@@ -57,7 +57,7 @@ class CalibrationOutcome(BaseModel):
     condition: Literal["baseline", "candidate", "frozen_kappa"]
     task_id: str
     rule_id: str | None = None
-    correct: bool
+    correct: bool | None
     termination_reason: str
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
@@ -103,6 +103,60 @@ class ModelIdentities(BaseModel):
     hstar: str
 
 
+class CalibrationProvenance(BaseModel):
+    """Non-secret configuration required to reproduce a calibration run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    code_revision: str
+    seed: int
+    execution_policy: dict[str, object]
+    student_max_output_tokens: int = Field(gt=0)
+    reviewer_max_output_tokens: int = Field(gt=0)
+    hstar_max_output_tokens: int = Field(gt=0)
+    sandbox_name: str
+    inference_base_url: str
+
+
+class PilotIntervention(BaseModel):
+    """Public validity evidence for one validated pilot review decision."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    decision: Literal["pass", "replace"]
+    proposed_action_type: str
+    accepted_action_type: str
+    accepted_action_valid: bool
+    direct_answer_replacement: bool
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    latency_ms: int = Field(ge=0)
+
+
+class PilotSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_count: int = Field(ge=3, le=5)
+    baseline_correct: int = Field(ge=0)
+    kappa_correct: int = Field(ge=0)
+    capability_delta: int
+    review_calls: int = Field(ge=0)
+    replacements: int = Field(ge=0)
+    invalid_interventions: int = Field(ge=0)
+
+
+class AdaptationDecision(BaseModel):
+    """Deterministic disposition of one H-star component into frozen Kappa."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    component_id: str
+    source_component: Literal["tools", "middleware", "skills", "failure_memory"]
+    disposition: Literal["transform", "split", "merge", "drop"]
+    output_rule_ids: tuple[str, ...]
+
+
 class CalibrationReport(BaseModel):
     """Frozen evidence needed before measured Collection may begin."""
 
@@ -116,7 +170,11 @@ class CalibrationReport(BaseModel):
     kappa: KappaArtifact
     fallback_reason: str | None
     models: ModelIdentities
+    provenance: CalibrationProvenance
+    adaptation_map: tuple[AdaptationDecision, ...]
     outcomes: tuple[CalibrationOutcome, ...]
+    pilot_interventions: tuple[PilotIntervention, ...]
+    pilot_summary: PilotSummary
     total_input_tokens: int = Field(ge=0)
     total_output_tokens: int = Field(ge=0)
     total_elapsed_ms: int = Field(ge=0)
@@ -148,13 +206,18 @@ def outcome(
     phase: Literal["discovery", "regression", "pilot"],
     condition: Literal["baseline", "candidate", "frozen_kappa"],
     rule_id: str | None = None,
+    require_complete: bool = True,
 ) -> CalibrationOutcome:
     return CalibrationOutcome(
         phase=phase,
         condition=condition,
         task_id=run.task_id,
         rule_id=rule_id,
-        correct=_require_correct(run),
+        correct=(
+            _require_correct(run)
+            if require_complete
+            else run.score.correct if run.score is not None else None
+        ),
         termination_reason=run.termination_reason,
         input_tokens=run.input_tokens,
         output_tokens=run.output_tokens,

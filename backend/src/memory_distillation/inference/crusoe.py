@@ -573,7 +573,9 @@ class CrusoeHStarAnalyst:
                     "role": "system",
                     "content": (
                         "Analyze only the supplied ChartQA discovery outcomes. Propose one "
-                        "revision containing one to three general, answer-free review rules. "
+                        "revision containing exactly one general, answer-free review rule. "
+                        "Classify its source_component as tools, middleware, skills, or "
+                        "failure_memory. "
                         "Rules must use only inspect_image, crop, run_python, or final_answer. "
                         "Do not include task IDs, questions, chart values, answers, paths, or "
                         "unsupported tools in rule instructions. Return the exact discovery "
@@ -589,8 +591,6 @@ class CrusoeHStarAnalyst:
             max_output_tokens=self._max_output_tokens,
             seed=seed,
         )
-        if not 1 <= len(result.output.rules) <= 3:
-            raise ValueError("H-star proposal must contain between one and three rules")
         return HStarAnalysisResult(
             proposal=result.output,
             model_id=result.model_id,

@@ -8,12 +8,16 @@ from typing import Literal, Protocol
 
 from memory_distillation.benchmark import TaskAsset, TaskInput
 from memory_distillation.calibration.models import (
+    AdaptationDecision,
     CalibrationOutcome,
     CalibrationProgress,
+    CalibrationProvenance,
     CalibrationReport,
     HStarAnalysisRequest,
     HStarAnalyst,
     ModelIdentities,
+    PilotIntervention,
+    PilotSummary,
     discovery_observations,
     outcome,
 )
@@ -27,6 +31,7 @@ from memory_distillation.review_policy import (
     freeze_kappa,
     freeze_minimal_kappa,
     hash_hstar_proposal,
+    validate_hstar_proposal,
 )
 from memory_distillation.task_execution import (
     CalibrationExecutionPolicy,
@@ -74,6 +79,7 @@ def calibrate_review_policy(
     analyst: HStarAnalyst,
     manifest_hash: str,
     models: ModelIdentities,
+    provenance: CalibrationProvenance,
     publish: ProgressPublisher,
     cost_meter: CostMeter,
     seed: int = 17,
@@ -81,8 +87,10 @@ def calibrate_review_policy(
 ) -> CalibrationReport:
     """Run isolated discovery, one proposal, sealed regression, and a frozen pilot."""
 
-    if not 1 <= pilot_tasks <= 5:
-        raise ValueError("pilot_tasks must be between one and five")
+    if not 3 <= pilot_tasks <= 5:
+        raise ValueError("pilot_tasks must be between three and five")
+    if provenance.seed != seed:
+        raise ValueError("calibration seed and provenance seed must match")
     base_policy = ExecutionPolicy()
     outcomes: list[CalibrationOutcome] = []
     total_input = total_output = total_elapsed = 0
@@ -149,9 +157,34 @@ def calibrate_review_policy(
         proposal_hash=proposal_hash,
     )
 
+    # Regression inputs remain invisible to H-star and are loaded only after its
+    # proposal has been parsed and canonically bound.
+    regression = source.load_calibration_regression()
+    _require_eight("regression", regression)
+    split = CalibrationSplit(
+        manifest_hash=manifest_hash,
+        discovery_task_ids=tuple(task.task_id for task in discovery),
+        regression_task_ids=tuple(task.task_id for task in regression),
+    )
+    privacy = CalibrationPrivacyContext(
+        forbidden_phrases=tuple(
+            item
+            for task in (*discovery, *regression)
+            for item in (task.task_id, task.question)
+            if item.strip()
+        )
+    )
+    proposal_rejection: str | None = None
+    try:
+        if len(proposal.rules) != 1:
+            raise ValueError("live H-star must propose exactly one atomic Kappa rule")
+        validate_hstar_proposal(proposal, privacy)
+    except ValueError as error:
+        proposal_rejection = str(error)
+
     executions: list[CalibrationExecution] = []
     baseline_by_discovery = {run.task_id: run for run in discovery_baselines}
-    for rule in proposal.rules:
+    for rule in (() if proposal_rejection else proposal.rules):
         policy = CalibrationExecutionPolicy(
             execution=base_policy,
             proposal_hash=proposal_hash,
@@ -183,14 +216,6 @@ def calibrate_review_policy(
                 )
             )
 
-    # This is intentionally the first point at which regression task inputs are loaded.
-    regression = source.load_calibration_regression()
-    _require_eight("regression", regression)
-    split = CalibrationSplit(
-        manifest_hash=manifest_hash,
-        discovery_task_ids=tuple(task.task_id for task in discovery),
-        regression_task_ids=tuple(task.task_id for task in regression),
-    )
     regression_baselines: list[TaskRun] = []
     for index, task in enumerate(regression, start=1):
         progress(
@@ -212,7 +237,8 @@ def calibrate_review_policy(
         record(run, outcome(run, phase="regression", condition="baseline"))
 
     baseline_by_regression = {run.task_id: run for run in regression_baselines}
-    for rule_index, rule in enumerate(proposal.rules):
+    candidate_rules = () if proposal_rejection else proposal.rules
+    for rule_index, rule in enumerate(candidate_rules):
         policy = CalibrationExecutionPolicy(
             execution=base_policy,
             proposal_hash=proposal_hash,
@@ -223,7 +249,7 @@ def calibrate_review_policy(
                 task=task,
                 asset=source.load_asset(task),
                 policy=policy,
-                seed=seed + 200 + index - 1,
+                seed=seed + 100 + index - 1,
             )
             record(
                 candidate,
@@ -254,27 +280,23 @@ def calibrate_review_policy(
                     current_task_id=task.task_id,
                 )
 
-    privacy = CalibrationPrivacyContext(
-        forbidden_phrases=tuple(
-            item
-            for task in (*discovery, *regression)
-            for item in (task.task_id, task.question)
-            if item.strip()
-        )
-    )
     fallback_reason: str | None = None
-    try:
-        kappa = freeze_kappa(
-            session=KappaCalibrationSession(split),
-            proposal=proposal,
-            executions=tuple(executions),
-            privacy=privacy,
-        )
-    except ValueError as error:
-        if "no Kappa rule demonstrated" not in str(error):
-            raise
-        fallback_reason = "No H-star rule produced positive isolated regression evidence."
+    if proposal_rejection:
+        fallback_reason = f"H-star proposal rejected before execution: {proposal_rejection}."
         kappa = freeze_minimal_kappa(split)
+    else:
+        try:
+            kappa = freeze_kappa(
+                session=KappaCalibrationSession(split),
+                proposal=proposal,
+                executions=tuple(executions),
+                privacy=privacy,
+            )
+        except ValueError as error:
+            if "no Kappa rule demonstrated" not in str(error):
+                raise
+            fallback_reason = "No H-star rule produced positive isolated regression evidence."
+            kappa = freeze_minimal_kappa(split)
     accepted_ids = {rule.rule_id for rule in kappa.rules}
     rejected = tuple(rule.rule_id for rule in proposal.rules if rule.rule_id not in accepted_ids)
     progress(
@@ -289,6 +311,8 @@ def calibrate_review_policy(
     )
 
     pilot_policy = ExecutionPolicy(review_required=True, kappa=kappa)
+    pilot_runs: list[TaskRun] = []
+    pilot_interventions: list[PilotIntervention] = []
     for index, task in enumerate(discovery[:pilot_tasks], start=1):
         progress(
             "smoke_test",
@@ -307,9 +331,43 @@ def calibrate_review_policy(
             task=task,
             asset=source.load_asset(task),
             policy=pilot_policy,
-            seed=seed + 300 + index - 1,
+            seed=seed + index - 1,
         )
-        record(run, outcome(run, phase="pilot", condition="frozen_kappa"))
+        pilot_runs.append(run)
+        invalid_terminal_reasons = {"invalid_crop", "sandbox_failed"}
+        pilot_interventions.extend(
+            PilotIntervention(
+                task_id=task.task_id,
+                decision=review.decision,
+                proposed_action_type=review.proposed_action.type,
+                accepted_action_type=review.accepted_action.type,
+                accepted_action_valid=(
+                    review_index < len(run.actions)
+                    and run.actions[review_index] == review.accepted_action
+                    and not (
+                        review_index == len(run.actions) - 1
+                        and run.termination_reason in invalid_terminal_reasons
+                    )
+                ),
+                direct_answer_replacement=(
+                    review.decision == "replace"
+                    and review.accepted_action.type == "final_answer"
+                ),
+                input_tokens=review.input_tokens,
+                output_tokens=review.output_tokens,
+                latency_ms=review.latency_ms,
+            )
+            for review_index, review in enumerate(run.reviews)
+        )
+        record(
+            run,
+            outcome(
+                run,
+                phase="pilot",
+                condition="frozen_kappa",
+                require_complete=False,
+            ),
+        )
 
     progress(
         "complete",
@@ -331,7 +389,58 @@ def calibrate_review_policy(
         kappa=kappa,
         fallback_reason=fallback_reason,
         models=models,
+        provenance=provenance,
+        adaptation_map=tuple(
+            AdaptationDecision(
+                component_id=rule.rule_id,
+                source_component=rule.source_component,
+                disposition="transform" if rule.rule_id in accepted_ids else "drop",
+                output_rule_ids=(rule.rule_id,) if rule.rule_id in accepted_ids else (),
+            )
+            for rule in proposal.rules
+        ),
         outcomes=tuple(outcomes),
+        pilot_interventions=tuple(pilot_interventions),
+        pilot_summary=PilotSummary(
+            task_count=pilot_tasks,
+            baseline_correct=sum(
+                outcome(run, phase="discovery", condition="baseline").correct is True
+                for run in discovery_baselines[:pilot_tasks]
+            ),
+            kappa_correct=sum(
+                outcome(
+                    run,
+                    phase="pilot",
+                    condition="frozen_kappa",
+                    require_complete=False,
+                ).correct
+                is True
+                for run in pilot_runs
+            ),
+            capability_delta=sum(
+                outcome(
+                    run,
+                    phase="pilot",
+                    condition="frozen_kappa",
+                    require_complete=False,
+                ).correct
+                is True
+                for run in pilot_runs
+            )
+            - sum(
+                outcome(run, phase="discovery", condition="baseline").correct is True
+                for run in discovery_baselines[:pilot_tasks]
+            ),
+            review_calls=sum(run.review_calls for run in pilot_runs),
+            replacements=sum(
+                review.decision == "replace"
+                for run in pilot_runs
+                for review in run.reviews
+            ),
+            invalid_interventions=sum(
+                not item.accepted_action_valid for item in pilot_interventions
+            ),
+        ),
         total_input_tokens=total_input,
         total_output_tokens=total_output,
         total_elapsed_ms=total_elapsed,
@@ -361,13 +470,18 @@ def _execution(
 ) -> CalibrationExecution:
     baseline_outcome = outcome(baseline, phase=phase, condition="baseline")
     candidate_outcome = outcome(candidate, phase=phase, condition="candidate")
+    if baseline_outcome.correct is None or candidate_outcome.correct is None:
+        raise RuntimeError("calibration evidence requires completed paired outcomes")
     return CalibrationExecution(
         execution_id=f"{proposal_hash[:12]}:{rule.rule_id}:{phase}:{baseline.task_id}",
         proposal_hash=proposal_hash,
         phase=phase,
         task_id=baseline.task_id,
         rule_id=rule.rule_id,
-        action_type=rule.action_types[0],
+        action_types=tuple(
+            dict.fromkeys(review.accepted_action.type for review in candidate.reviews)
+        )
+        or tuple(dict.fromkeys(action.type for action in candidate.actions)),
         baseline_correct=baseline_outcome.correct,
         candidate_correct=candidate_outcome.correct,
     )
