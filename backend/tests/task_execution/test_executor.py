@@ -7,9 +7,11 @@ from memory_distillation.inference import DeterministicInference
 from memory_distillation.sandbox import DeterministicSandbox, SandboxResult
 from memory_distillation.task_execution import (
     CropAction,
+    DeterministicReviewer,
     ExecutionPolicy,
     FinalAnswerAction,
     InspectImageAction,
+    ReviewResult,
     RunEvent,
     RunPythonAction,
     StudentAction,
@@ -80,6 +82,95 @@ def test_execution_budgets_fail_closed(
 
     assert run.termination_reason == expected
     assert run.events[-1].type == "run_completed"
+
+
+def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -> None:
+    task, asset = _fixture_input()
+    proposed = RunPythonAction(code="print('unsafe proposal')")
+    accepted = RunPythonAction(code="print(42)")
+    inference: DeterministicInference[StudentAction] = DeterministicInference(
+        actions=(proposed, FinalAnswerAction(answer="42")),
+        model_id="fixture-student-v1",
+    )
+    reviewer = DeterministicReviewer(
+        results=(
+            ReviewResult(
+                decision="replace",
+                accepted_action=accepted,
+                private_reason="hidden reviewer chain of thought",
+            ),
+            ReviewResult(
+                decision="pass",
+                accepted_action=FinalAnswerAction(answer="42"),
+                private_reason="hidden final rationale",
+            ),
+        )
+    )
+    sandbox = DeterministicSandbox(
+        results={
+            accepted.code: SandboxResult(
+                status="completed", stdout="42\n", stderr="", exit_code=0, latency_ms=1
+            )
+        }
+    )
+
+    run = TaskExecutor(
+        inference=inference,
+        sandbox=sandbox,
+        verifier=FixtureVerifier(),
+        event_sink=InMemoryEventSink(),
+        reviewer=reviewer,
+    ).run(
+        task=task,
+        asset=asset,
+        policy=ExecutionPolicy(review_required=True, kappa_guidance=("Prefer exact arithmetic.",)),
+        seed=17,
+    )
+
+    assert run.termination_reason == "completed"
+    assert run.actions == (accepted, FinalAnswerAction(answer="42"))
+    assert run.reviews[0].proposed_action == proposed
+    assert run.reviews[0].accepted_action == accepted
+    assert sandbox.requests[0].code == accepted.code
+    assert inference.requests[1].observations == ("42\n",)
+    assert reviewer.requests[0].guidance == ("Prefer exact arithmetic.",)
+    assert "hidden" not in run.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    ("reviewer", "max_review_calls", "expected"),
+    [
+        (None, 1, "reviewer_failed"),
+        (DeterministicReviewer(results=()), 1, "reviewer_failed"),
+        (DeterministicReviewer(results=()), 0, "reviewer_budget_exhausted"),
+    ],
+)
+def test_reviewer_failure_and_budget_exhaustion_fail_closed(
+    reviewer: DeterministicReviewer | None,
+    max_review_calls: int,
+    expected: str,
+) -> None:
+    task, asset = _fixture_input()
+    sandbox = DeterministicSandbox(results={})
+    run = TaskExecutor(
+        inference=DeterministicInference(
+            actions=(RunPythonAction(code="print('must not run')"),),
+            model_id="fixture-student-v1",
+        ),
+        sandbox=sandbox,
+        verifier=FixtureVerifier(),
+        event_sink=InMemoryEventSink(),
+        reviewer=reviewer,
+    ).run(
+        task=task,
+        asset=asset,
+        policy=ExecutionPolicy(review_required=True, max_review_calls=max_review_calls),
+        seed=17,
+    )
+
+    assert run.termination_reason == expected
+    assert run.actions == ()
+    assert sandbox.requests == []
 
 
 def _run_fixture() -> TaskRun:

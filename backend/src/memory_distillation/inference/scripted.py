@@ -25,10 +25,12 @@ class DeterministicInference[OutputT]:
         self._input_tokens = input_tokens_per_call
         self._output_tokens = output_tokens_per_call
         self._latency_ms = latency_ms_per_call
+        self.requests: list[InferenceRequest] = []
 
     def generate(self, request: InferenceRequest) -> InferenceResult[OutputT]:
         """Return the action at the current turn or fail when the script is exhausted."""
 
+        self.requests.append(request)
         try:
             action = self._actions[request.turn_index]
         except IndexError as error:

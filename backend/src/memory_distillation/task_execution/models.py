@@ -61,6 +61,9 @@ class ExecutionPolicy(BaseModel):
     max_elapsed_ms: int = Field(default=120_000, ge=1)
     sandbox_timeout_ms: int = Field(default=10_000, ge=1)
     max_crop_coordinate: int = Field(default=8_192, ge=1)
+    review_required: bool = False
+    max_review_calls: int = Field(default=8, ge=0)
+    kappa_guidance: tuple[str, ...] = ()
 
 
 class Observation(BaseModel):
@@ -101,6 +104,25 @@ class ObservationEvent(BaseModel):
     observation: Observation
 
 
+class ActionReview(BaseModel):
+    """Auditable public review result without private Reviewer reasoning."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision: Literal["pass", "replace"]
+    proposed_action: StudentAction
+    accepted_action: StudentAction
+
+
+class ActionReviewedEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["action_reviewed"] = "action_reviewed"
+    sequence: int
+    task_id: str
+    review: ActionReview
+
+
 TerminationReason = Literal[
     "completed",
     "action_budget_exhausted",
@@ -111,6 +133,8 @@ TerminationReason = Literal[
     "inference_failed",
     "sandbox_failed",
     "invalid_crop",
+    "reviewer_failed",
+    "reviewer_budget_exhausted",
 ]
 
 
@@ -125,7 +149,11 @@ class RunCompletedEvent(BaseModel):
 
 
 RunEvent = Annotated[
-    RunStartedEvent | ActionProposedEvent | ObservationEvent | RunCompletedEvent,
+    RunStartedEvent
+    | ActionProposedEvent
+    | ActionReviewedEvent
+    | ObservationEvent
+    | RunCompletedEvent,
     Field(discriminator="type"),
 ]
 
@@ -141,6 +169,7 @@ class TaskRun(BaseModel):
     termination_reason: TerminationReason
     actions: tuple[StudentAction, ...]
     observations: tuple[Observation, ...]
+    reviews: tuple[ActionReview, ...]
     events: tuple[RunEvent, ...]
     score: Score | None
     input_tokens: int = Field(ge=0)
@@ -148,3 +177,4 @@ class TaskRun(BaseModel):
     elapsed_ms: int = Field(ge=0)
     tool_calls: int = Field(ge=0)
     python_calls: int = Field(ge=0)
+    review_calls: int = Field(ge=0)

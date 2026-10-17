@@ -2,6 +2,7 @@
 
 from memory_distillation.task_execution.executor import TaskExecutor
 from memory_distillation.task_execution.models import (
+    ActionReview,
     CropAction,
     ExecutionPolicy,
     FinalAnswerAction,
@@ -11,12 +12,23 @@ from memory_distillation.task_execution.models import (
     StudentAction,
     TaskRun,
 )
+from memory_distillation.task_execution.review import (
+    DeterministicReviewer,
+    Reviewer,
+    ReviewRequest,
+    ReviewResult,
+)
 
 __all__ = [
+    "ActionReview",
     "CropAction",
+    "DeterministicReviewer",
     "ExecutionPolicy",
     "FinalAnswerAction",
     "InspectImageAction",
+    "ReviewRequest",
+    "ReviewResult",
+    "Reviewer",
     "RunEvent",
     "RunPythonAction",
     "StudentAction",

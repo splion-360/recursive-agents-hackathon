@@ -7,6 +7,8 @@ from memory_distillation.inference import InferenceClient, InferenceRequest
 from memory_distillation.sandbox import Sandbox, SandboxRequest
 from memory_distillation.task_execution.models import (
     ActionProposedEvent,
+    ActionReview,
+    ActionReviewedEvent,
     CropAction,
     ExecutionPolicy,
     FinalAnswerAction,
@@ -20,6 +22,7 @@ from memory_distillation.task_execution.models import (
     TaskRun,
     TerminationReason,
 )
+from memory_distillation.task_execution.review import Reviewer, ReviewRequest
 from memory_distillation.telemetry import EventSink
 
 
@@ -37,11 +40,13 @@ class TaskExecutor:
         sandbox: Sandbox,
         verifier: Verifier,
         event_sink: EventSink[RunEvent],
+        reviewer: Reviewer | None = None,
     ) -> None:
         self._inference = inference
         self._sandbox = sandbox
         self._verifier = verifier
         self._event_sink = event_sink
+        self._reviewer = reviewer
 
     def run(
         self,
@@ -58,8 +63,9 @@ class TaskExecutor:
 
         actions: list[StudentAction] = []
         observations: list[Observation] = []
+        reviews: list[ActionReview] = []
         events: list[RunEvent] = []
-        input_tokens = output_tokens = elapsed_ms = tool_calls = python_calls = 0
+        input_tokens = output_tokens = elapsed_ms = tool_calls = python_calls = review_calls = 0
 
         def emit(event: RunEvent) -> None:
             events.append(event)
@@ -80,8 +86,18 @@ class TaskExecutor:
                 )
             except Exception:
                 return self._finish(
-                    "inference_failed", task, seed, actions, observations, events,
-                    input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                    "inference_failed",
+                    task,
+                    seed,
+                    actions,
+                    observations,
+                    events,
+                    input_tokens,
+                    output_tokens,
+                    elapsed_ms,
+                    tool_calls,
+                    python_calls,
+                    None,
                 )
 
             input_tokens += result.input_tokens
@@ -89,38 +105,179 @@ class TaskExecutor:
             elapsed_ms += result.latency_ms
             if input_tokens + output_tokens > policy.max_total_tokens:
                 return self._finish(
-                    "token_budget_exhausted", task, seed, actions, observations, events,
-                    input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                    "token_budget_exhausted",
+                    task,
+                    seed,
+                    actions,
+                    observations,
+                    events,
+                    input_tokens,
+                    output_tokens,
+                    elapsed_ms,
+                    tool_calls,
+                    python_calls,
+                    None,
                 )
             if elapsed_ms > policy.max_elapsed_ms:
                 return self._finish(
-                    "time_budget_exhausted", task, seed, actions, observations, events,
-                    input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                    "time_budget_exhausted",
+                    task,
+                    seed,
+                    actions,
+                    observations,
+                    events,
+                    input_tokens,
+                    output_tokens,
+                    elapsed_ms,
+                    tool_calls,
+                    python_calls,
+                    None,
                 )
 
-            action = result.output
-            actions.append(action)
+            proposed_action = result.output
             emit(
                 ActionProposedEvent(
                     sequence=len(events),
                     task_id=task.task_id,
-                    action=action,
+                    action=proposed_action,
                     model_id=result.model_id,
                     request_id=result.request_id,
                 )
             )
 
+            action = proposed_action
+            if policy.review_required:
+                if review_calls >= policy.max_review_calls:
+                    return self._finish(
+                        "reviewer_budget_exhausted",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
+                        reviews,
+                        review_calls,
+                    )
+                if self._reviewer is None:
+                    return self._finish(
+                        "reviewer_failed",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
+                        reviews,
+                        review_calls,
+                    )
+                review_calls += 1
+                try:
+                    result_review = self._reviewer.review(
+                        ReviewRequest(
+                            task=task,
+                            proposed_action=proposed_action,
+                            observations=tuple(observations),
+                            guidance=policy.kappa_guidance,
+                            turn_index=turn_index,
+                        )
+                    )
+                except Exception:
+                    return self._finish(
+                        "reviewer_failed",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
+                        reviews,
+                        review_calls,
+                    )
+                pass_changed_action = (
+                    result_review.decision == "pass"
+                    and result_review.accepted_action != proposed_action
+                )
+                if pass_changed_action:
+                    return self._finish(
+                        "reviewer_failed",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
+                        reviews,
+                        review_calls,
+                    )
+                action = result_review.accepted_action
+                public_review = ActionReview(
+                    decision=result_review.decision,
+                    proposed_action=proposed_action,
+                    accepted_action=action,
+                )
+                reviews.append(public_review)
+                emit(
+                    ActionReviewedEvent(
+                        sequence=len(events),
+                        task_id=task.task_id,
+                        review=public_review,
+                    )
+                )
+
+            actions.append(action)
+
             if isinstance(action, FinalAnswerAction):
                 score = self._verifier.score(task.task_id, action.answer)
                 return self._finish(
-                    "completed", task, seed, actions, observations, events,
-                    input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, score,
+                    "completed",
+                    task,
+                    seed,
+                    actions,
+                    observations,
+                    events,
+                    input_tokens,
+                    output_tokens,
+                    elapsed_ms,
+                    tool_calls,
+                    python_calls,
+                    score,
                 )
 
             if tool_calls >= policy.max_tool_calls:
                 return self._finish(
-                    "tool_budget_exhausted", task, seed, actions, observations, events,
-                    input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                    "tool_budget_exhausted",
+                    task,
+                    seed,
+                    actions,
+                    observations,
+                    events,
+                    input_tokens,
+                    output_tokens,
+                    elapsed_ms,
+                    tool_calls,
+                    python_calls,
+                    None,
                 )
             tool_calls += 1
 
@@ -132,8 +289,18 @@ class TaskExecutor:
             elif isinstance(action, CropAction):
                 if max(action.x0, action.y0, action.x1, action.y1) > policy.max_crop_coordinate:
                     return self._finish(
-                        "invalid_crop", task, seed, actions, observations, events,
-                        input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                        "invalid_crop",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
                     )
                 observation = Observation(
                     action_type="crop",
@@ -142,8 +309,18 @@ class TaskExecutor:
             else:
                 if python_calls >= policy.max_python_calls:
                     return self._finish(
-                        "python_budget_exhausted", task, seed, actions, observations, events,
-                        input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                        "python_budget_exhausted",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
                     )
                 python_calls += 1
                 try:
@@ -156,19 +333,49 @@ class TaskExecutor:
                     )
                 except Exception:
                     return self._finish(
-                        "sandbox_failed", task, seed, actions, observations, events,
-                        input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                        "sandbox_failed",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
                     )
                 elapsed_ms += sandbox_result.latency_ms
                 if elapsed_ms > policy.max_elapsed_ms:
                     return self._finish(
-                        "time_budget_exhausted", task, seed, actions, observations, events,
-                        input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                        "time_budget_exhausted",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
                     )
                 if sandbox_result.status != "completed" or sandbox_result.exit_code != 0:
                     return self._finish(
-                        "sandbox_failed", task, seed, actions, observations, events,
-                        input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+                        "sandbox_failed",
+                        task,
+                        seed,
+                        actions,
+                        observations,
+                        events,
+                        input_tokens,
+                        output_tokens,
+                        elapsed_ms,
+                        tool_calls,
+                        python_calls,
+                        None,
                     )
                 observation = Observation(
                     action_type="run_python",
@@ -185,8 +392,18 @@ class TaskExecutor:
             )
 
         return self._finish(
-            "action_budget_exhausted", task, seed, actions, observations, events,
-            input_tokens, output_tokens, elapsed_ms, tool_calls, python_calls, None,
+            "action_budget_exhausted",
+            task,
+            seed,
+            actions,
+            observations,
+            events,
+            input_tokens,
+            output_tokens,
+            elapsed_ms,
+            tool_calls,
+            python_calls,
+            None,
         )
 
     def _finish(
@@ -203,7 +420,12 @@ class TaskExecutor:
         tool_calls: int,
         python_calls: int,
         score: Score | None,
+        reviews: list[ActionReview] | None = None,
+        review_calls: int = 0,
     ) -> TaskRun:
+        if reviews is None:
+            reviews = [event.review for event in events if isinstance(event, ActionReviewedEvent)]
+            review_calls = len(reviews)
         event = RunCompletedEvent(
             sequence=len(events),
             task_id=task.task_id,
@@ -218,6 +440,7 @@ class TaskExecutor:
             termination_reason=reason,
             actions=tuple(actions),
             observations=tuple(observations),
+            reviews=tuple(reviews),
             events=tuple(events),
             score=score,
             input_tokens=input_tokens,
@@ -225,4 +448,5 @@ class TaskExecutor:
             elapsed_ms=elapsed_ms,
             tool_calls=tool_calls,
             python_calls=python_calls,
+            review_calls=review_calls,
         )
