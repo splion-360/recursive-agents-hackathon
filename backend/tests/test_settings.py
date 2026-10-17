@@ -21,10 +21,7 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
                 "CRUSOE_STUDENT_MODEL=student-v1",
                 "CRUSOE_REVIEWER_MODEL=reviewer-v1",
                 "CRUSOE_CONSOLIDATOR_MODEL=consolidator-v1",
-                "CRUSOE_MAX_COST_USD=0.05",
-                "CRUSOE_MAX_TOTAL_TOKENS=500000",
-                "CRUSOE_TIMEOUT_SECONDS=60",
-                "CRUSOE_MAX_RETRIES=1",
+                "CRUSOE_HSTAR_MODEL=hstar-v1",
                 "OPENSHELL_BASE_URL=https://sandbox.example.test",
                 "OPENSHELL_API_KEY=sandbox-secret",
             )
@@ -43,6 +40,7 @@ def test_settings_load_every_supported_environment_variable(tmp_path: Path) -> N
     assert settings.crusoe_student_model == "student-v1"
     assert settings.crusoe_reviewer_model == "reviewer-v1"
     assert settings.crusoe_consolidator_model == "consolidator-v1"
+    assert settings.crusoe_hstar_model == "hstar-v1"
     assert settings.crusoe_max_cost_usd == Decimal("0.05")
     assert settings.crusoe_max_total_tokens == 500_000
     assert settings.crusoe_timeout_seconds == 60
@@ -62,6 +60,7 @@ def test_empty_optional_values_use_safe_defaults(tmp_path: Path) -> None:
                 "CRUSOE_BASE_URL=",
                 "CRUSOE_API_KEY=",
                 "CRUSOE_STUDENT_MODEL=",
+                "CRUSOE_HSTAR_MODEL=",
                 "OPENSHELL_BASE_URL=",
                 "OPENSHELL_API_KEY=",
             )
@@ -74,6 +73,7 @@ def test_empty_optional_values_use_safe_defaults(tmp_path: Path) -> None:
     assert str(settings.crusoe_base_url) == "https://api.inference.crusoecloud.com/v1"
     assert settings.crusoe_api_key is None
     assert settings.crusoe_student_model is None
+    assert settings.crusoe_hstar_model is None
     assert settings.openshell_base_url is None
     assert settings.openshell_api_key is None
 
