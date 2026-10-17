@@ -8,6 +8,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from memory_distillation.task_execution.models import RunEvent
+from memory_distillation.telemetry.jsonl import JsonlEventSink
 
 
 class ReplayArtifact(BaseModel):
@@ -21,24 +22,6 @@ class ReplayArtifact(BaseModel):
     forbidden_phrases: tuple[str, ...] = Field(min_length=1)
     metadata_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
-    @classmethod
-    def create(
-        cls,
-        *,
-        path: Path,
-        origin: Literal["SYNTHETIC_FIXTURE", "SANITIZED_RUN"],
-        forbidden_phrases: tuple[str, ...],
-    ) -> Self:
-        trace_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-        metadata_sha256 = _metadata_hash(origin, trace_sha256, forbidden_phrases)
-        return cls(
-            path=path,
-            origin=origin,
-            trace_sha256=trace_sha256,
-            forbidden_phrases=forbidden_phrases,
-            metadata_sha256=metadata_sha256,
-        )
-
     @model_validator(mode="after")
     def verify_metadata(self) -> Self:
         if not all(phrase.strip() for phrase in self.forbidden_phrases):
@@ -47,6 +30,39 @@ class ReplayArtifact(BaseModel):
         if self.metadata_sha256 != expected:
             raise ValueError("replay metadata identity does not match its content")
         return self
+
+
+class ReplayTraceWriter:
+    """Trace producer that fixes replay provenance before the first event."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        origin: Literal["SYNTHETIC_FIXTURE", "SANITIZED_RUN"],
+        forbidden_phrases: tuple[str, ...],
+    ) -> None:
+        if not forbidden_phrases or not all(phrase.strip() for phrase in forbidden_phrases):
+            raise ValueError("replay privacy phrases must be fixed and non-empty")
+        self._path = path
+        self._origin = origin
+        self._forbidden_phrases = forbidden_phrases
+        self._sink = JsonlEventSink(path)
+
+    def emit(self, event: RunEvent) -> None:
+        self._sink.emit(event)
+
+    def freeze(self) -> ReplayArtifact:
+        """Bind completed bytes to the provenance fixed by the trace producer."""
+
+        trace_sha256 = hashlib.sha256(self._path.read_bytes()).hexdigest()
+        return ReplayArtifact(
+            path=self._path,
+            origin=self._origin,
+            trace_sha256=trace_sha256,
+            forbidden_phrases=self._forbidden_phrases,
+            metadata_sha256=_metadata_hash(self._origin, trace_sha256, self._forbidden_phrases),
+        )
 
 
 class Replay(BaseModel):
