@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from memory_distillation.settings import get_settings
 from memory_distillation.visualizer import (
     MetricEvidence,
     PromotionEvidence,
@@ -23,6 +24,7 @@ class HealthResponse(BaseModel):
 
 
 app = FastAPI(title="Memory-Distilled Agent Team")
+app.state.settings = get_settings()
 
 
 @app.get("/health", response_model=HealthResponse)

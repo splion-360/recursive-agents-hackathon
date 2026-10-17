@@ -251,10 +251,12 @@ def test_review_policy_accepts_only_one_validated_kappa_artifact() -> None:
     assert policy.kappa_hash == kappa.content_hash
     assert policy.kappa_guidance == kappa.guidance
     with pytest.raises(ValidationError):
-        ExecutionPolicy(
-            review_required=True,
-            kappa_hash=kappa.content_hash,
-            kappa_guidance=("Substituted guidance.",),
+        ExecutionPolicy.model_validate(
+            {
+                "review_required": True,
+                "kappa_hash": kappa.content_hash,
+                "kappa_guidance": ("Substituted guidance.",),
+            }
         )
 
 
