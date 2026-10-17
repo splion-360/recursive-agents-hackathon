@@ -29,10 +29,6 @@ def test_read_only_evidence_endpoints_are_synthetic_and_sanitized() -> None:
     combined = "".join(response.text for response in payloads).casefold()
     assert "private_reason" not in combined
     assert "api_key" not in combined
-    assert {item["role"] for item in payloads[1].json()} == {
-        "ACCEPTED",
-        "CANDIDATE",
-        "REJECTED",
-    }
+    assert {item["role"] for item in payloads[1].json()} == {"ACCEPTED", "PREVIOUS"}
     for method in (client.post, client.put, client.delete):
         assert method("/api/evidence/runs").status_code == 405

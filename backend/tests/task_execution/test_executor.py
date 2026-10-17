@@ -20,6 +20,8 @@ from memory_distillation.task_execution import (
 )
 from memory_distillation.telemetry import InMemoryEventSink
 
+KAPPA_HASH = "a" * 64
+
 
 class FixtureVerifier:
     """Score only the known fixture answer."""
@@ -133,7 +135,11 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
     ).run(
         task=task,
         asset=asset,
-        policy=ExecutionPolicy(review_required=True, kappa_guidance=("Prefer exact arithmetic.",)),
+        policy=ExecutionPolicy(
+            review_required=True,
+            kappa_hash=KAPPA_HASH,
+            kappa_guidance=("Prefer exact arithmetic.",),
+        ),
         seed=17,
     )
 
@@ -149,6 +155,7 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
     assert run.output_tokens == 10
     assert run.elapsed_ms == 17
     assert "hidden" not in run.model_dump_json()
+    assert run.kappa_hash == KAPPA_HASH
 
 
 @pytest.mark.parametrize(
@@ -178,13 +185,26 @@ def test_reviewer_failure_and_budget_exhaustion_fail_closed(
     ).run(
         task=task,
         asset=asset,
-        policy=ExecutionPolicy(review_required=True, max_review_calls=max_review_calls),
+        policy=ExecutionPolicy(
+            review_required=True,
+            max_review_calls=max_review_calls,
+            kappa_hash=KAPPA_HASH,
+            kappa_guidance=("Review every action.",),
+        ),
         seed=17,
     )
 
     assert run.termination_reason == expected
     assert run.actions == ()
     assert sandbox.requests == []
+
+
+def test_review_policy_requires_frozen_kappa_identity() -> None:
+    with pytest.raises(ValueError, match="frozen Kappa"):
+        ExecutionPolicy(review_required=True, kappa_guidance=("Review every action.",))
+
+    with pytest.raises(ValueError, match="Reviewer-free"):
+        ExecutionPolicy(kappa_hash=KAPPA_HASH, kappa_guidance=("Should not be visible.",))
 
 
 def _run_fixture() -> TaskRun:

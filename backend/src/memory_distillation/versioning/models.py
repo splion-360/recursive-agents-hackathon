@@ -181,7 +181,7 @@ class CandidateVersion(BaseModel):
     schema_version: Literal["candidate-version.v1"] = "candidate-version.v1"
     version_id: str
     parent_version_id: str
-    kappa_hash: str
+    kappa_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     snapshot: EpisodeSnapshot
     cards: tuple[BehaviorCard, ...]
     operations: tuple[CardOperation, ...]

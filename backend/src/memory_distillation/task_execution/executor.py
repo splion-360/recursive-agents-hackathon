@@ -72,7 +72,14 @@ class TaskExecutor:
             events.append(event)
             self._event_sink.emit(event)
 
-        emit(RunStartedEvent(sequence=0, task_id=task.task_id, seed=seed))
+        emit(
+            RunStartedEvent(
+                sequence=0,
+                task_id=task.task_id,
+                seed=seed,
+                kappa_hash=policy.kappa_hash,
+            )
+        )
 
         for turn_index in range(policy.max_actions):
             try:
@@ -494,4 +501,7 @@ class TaskExecutor:
             tool_calls=tool_calls,
             python_calls=python_calls,
             review_calls=review_calls,
+            kappa_hash=(
+                events[0].kappa_hash if events and isinstance(events[0], RunStartedEvent) else None
+            ),
         )

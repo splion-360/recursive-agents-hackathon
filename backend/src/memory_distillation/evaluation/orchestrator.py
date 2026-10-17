@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from memory_distillation.benchmark import TaskAsset, TaskInput
 from memory_distillation.evaluation.report import (
     C3Assignment,
+    Condition,
     ConditionPolicy,
     ConditionResult,
     validate_condition_policies,
@@ -44,36 +45,49 @@ def run_offline_conditions(
     if len(donor_by_id) != len(accepted_view.cards):
         raise ValueError("Accepted Version contains duplicate card identifiers")
 
+    # Resolve and validate every context before the first model request. A bad late C3
+    # assignment must not leave a partial C0-C2 experiment behind.
+    contexts: dict[tuple[str, str], tuple[str, ...]] = {}
+    for item in tasks:
+        task_id = item.task.task_id
+        contexts[(task_id, "C0")] = ()
+        contexts[(task_id, "C1")] = ()
+        accepted_context = retrieve_behavior_cards(accepted_view, item.task)
+        contexts[(task_id, "C2")] = accepted_context
+        assignment = assignment_by_task.get(task_id)
+        if assignment is None:
+            continue
+        try:
+            selected = tuple(donor_by_id[card_id] for card_id in assignment.card_ids)
+        except KeyError as error:
+            raise ValueError("C3 assignment references an unknown donor card") from error
+        task_terms = set(item.task.question.casefold().split())
+        if any(task_terms & set(card.trigger.casefold().split()) for card in selected):
+            raise ValueError("C3 assignment contains a trigger-matched donor card")
+        irrelevant_context = tuple(f"{card.trigger}\n{card.instruction}" for card in selected)
+        accepted_tokens = sum(len(text.split()) for text in accepted_context)
+        assigned_tokens = sum(len(text.split()) for text in irrelevant_context)
+        if assignment.token_count != assigned_tokens:
+            raise ValueError("C3 assignment token provenance is invalid")
+        if len(irrelevant_context) != len(accepted_context):
+            raise ValueError("C3 assignment does not match C2 card count")
+        if accepted_tokens == 0 or abs(assigned_tokens - accepted_tokens) > (
+            accepted_tokens * 0.10
+        ):
+            raise ValueError("C3 assignment does not match C2 token count")
+        contexts[(task_id, "C3")] = irrelevant_context
+
     results: list[ConditionResult] = []
-    for condition in ("C0", "C1", "C2", "C3"):
-        policy = policy_by_condition[condition]
-        for item in tasks:
-            if condition == "C3" and item.task.task_id not in assignment_by_task:
+    conditions: tuple[Condition, ...] = ("C0", "C1", "C2", "C3")
+    for task_index, item in enumerate(sorted(tasks, key=lambda value: value.task.task_id)):
+        # Rotate condition order across tasks to prevent warm-cache/order effects from
+        # consistently favoring a single condition.
+        offset = task_index % len(conditions)
+        for condition in conditions[offset:] + conditions[:offset]:
+            context = contexts.get((item.task.task_id, condition))
+            if context is None:
                 continue
-            context: tuple[str, ...] = ()
-            if condition == "C2":
-                context = retrieve_behavior_cards(accepted_view, item.task)
-            elif condition == "C3":
-                assignment = assignment_by_task[item.task.task_id]
-                try:
-                    selected = tuple(donor_by_id[card_id] for card_id in assignment.card_ids)
-                except KeyError as error:
-                    raise ValueError("C3 assignment references an unknown donor card") from error
-                accepted_context = retrieve_behavior_cards(accepted_view, item.task)
-                task_terms = set(item.task.question.casefold().split())
-                if any(task_terms & set(card.trigger.casefold().split()) for card in selected):
-                    raise ValueError("C3 assignment contains a trigger-matched donor card")
-                context = tuple(f"{card.trigger}\n{card.instruction}" for card in selected)
-                accepted_tokens = sum(len(text.split()) for text in accepted_context)
-                assigned_tokens = sum(len(text.split()) for text in context)
-                if assignment.token_count != assigned_tokens:
-                    raise ValueError("C3 assignment token provenance is invalid")
-                if len(context) != len(accepted_context):
-                    raise ValueError("C3 assignment does not match C2 card count")
-                if accepted_tokens == 0 or abs(assigned_tokens - accepted_tokens) > (
-                    accepted_tokens * 0.10
-                ):
-                    raise ValueError("C3 assignment does not match C2 token count")
+            policy = policy_by_condition[condition]
             run = executor.run(
                 task=item.task,
                 asset=item.asset,

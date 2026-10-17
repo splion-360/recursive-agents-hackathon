@@ -26,6 +26,7 @@ class EpisodeProvenance(BaseModel):
     manifest_task_ids: tuple[str, ...]
     accepted_version_id: str = Field(min_length=1)
     accepted_content_hash: str = Field(min_length=1)
+    kappa_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def require_unique_manifest_membership(self) -> "EpisodeProvenance":
@@ -61,6 +62,8 @@ def episode_from_run(
 
     if task.task_id != run.task_id:
         raise ValueError("task and run identifiers differ")
+    if run.kappa_hash != provenance.kappa_hash:
+        raise ValueError("run Kappa identity does not match episode provenance")
     student_models = (event.model_id for event in run.events if event.type == "action_proposed")
     reviewer_models = (
         event.review.model_id for event in run.events if event.type == "action_reviewed"
@@ -76,6 +79,7 @@ def episode_from_run(
             "purpose": provenance.purpose,
             "accepted_version_id": provenance.accepted_version_id,
             "accepted_content_hash": provenance.accepted_content_hash,
+            "kappa_hash": provenance.kappa_hash,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -86,6 +90,14 @@ def episode_from_run(
         and task.task_id in provenance.manifest_task_ids
         and run.termination_reason == "completed"
         and len(run.reviews) == len(run.actions)
+        and not any(
+            review.decision == "replace"
+            and (
+                review.accepted_action.type == "final_answer"
+                or review.accepted_action == review.proposed_action
+            )
+            for review in run.reviews
+        )
     )
     return ReviewedEpisode(
         episode_id=episode_id,

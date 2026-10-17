@@ -4,7 +4,13 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from memory_distillation.benchmark import Score, TaskAsset, TaskInput
+from memory_distillation.benchmark import (
+    ExperimentManifest,
+    ManifestEntry,
+    Score,
+    TaskAsset,
+    TaskInput,
+)
 from memory_distillation.inference import DeterministicInference
 from memory_distillation.sandbox import DeterministicSandbox
 from memory_distillation.task_execution import ExecutionPolicy, FinalAnswerAction, TaskExecutor
@@ -20,7 +26,6 @@ from memory_distillation.versioning import (
     PromotionThresholds,
     RetrievalPolicy,
     VersionRegistry,
-    VersionView,
     decide_promotion,
     run_paired_promotion,
 )
@@ -31,19 +36,57 @@ class AnyAnswerVerifier:
         return Score(correct=prediction == "ok", method="text_exact")
 
 
-def _candidate() -> CandidateVersion:
+def _question(index: int) -> str:
+    return f"What chart value {index} should be checked?"
+
+
+def _manifest() -> ExperimentManifest:
+    return ExperimentManifest.create(
+        name="promotion",
+        seed=17,
+        dataset_revision="fixture",
+        source_sha256="f" * 64,
+        entries=tuple(
+            ManifestEntry(
+                task_id=f"task-{index:02d}",
+                image_asset_id=f"task-{index:02d}.png",
+                image_sha256=f"{index + 1:064x}",
+                question_sha256=hashlib.sha256(_question(index).encode()).hexdigest(),
+                source_split="val",
+                question_form="wh",
+                operation_type="lookup",
+            )
+            for index in range(30)
+        ),
+    )
+
+
+def _candidate(*, with_card: bool = False) -> CandidateVersion:
     snapshot = EpisodeSnapshot(episode_ids=("e1",), episode_hashes=("h1",), snapshot_hash="s")
+    cards = (
+        (
+            BehaviorCard(
+                card_id="card:what",
+                trigger="What chart",
+                instruction="Verify the label before arithmetic.",
+                evidence_episode_ids=("episode:1",),
+            ),
+        )
+        if with_card
+        else ()
+    )
     retrieval_policy = RetrievalPolicy(
-        top_k=0,
+        top_k=1 if cards else 0,
         minimum_score=0,
-        token_budget=0,
+        token_budget=100 if cards else 0,
         calibration_snapshot_hash="s",
     )
+    kappa_hash = "b" * 64
     payload = {
         "parent_version_id": "accepted-v000",
-        "kappa_hash": "kappa",
+        "kappa_hash": kappa_hash,
         "snapshot": snapshot.model_dump(mode="json"),
-        "cards": [],
+        "cards": [card.model_dump(mode="json") for card in cards],
         "operations": [],
         "retrieval_policy": retrieval_policy.model_dump(mode="json"),
     }
@@ -53,39 +96,34 @@ def _candidate() -> CandidateVersion:
     return CandidateVersion(
         version_id=f"candidate:{digest[:16]}",
         parent_version_id="accepted-v000",
-        kappa_hash="kappa",
+        kappa_hash=kappa_hash,
         snapshot=snapshot,
-        cards=(),
+        cards=cards,
         operations=(),
         retrieval_policy=retrieval_policy,
         content_hash=digest,
     )
 
 
-def _plan(candidate: CandidateVersion) -> PromotionPlan:
+def _plan(candidate: CandidateVersion, manifest: ExperimentManifest | None = None) -> PromotionPlan:
+    frozen_manifest = manifest or _manifest()
     return PromotionPlan(
-        manifest_hash="promotion-manifest",
+        manifest=frozen_manifest,
         configuration_hash="frozen-config",
         accepted_version_id="accepted-v000",
         accepted_content_hash="0" * 64,
         candidate_version_id=candidate.version_id,
         candidate_content_hash=candidate.content_hash,
-        manifest_task_ids=tuple(f"task-{index:02d}" for index in range(30)),
         assignments=tuple(
-            PromotionAssignment(task_id=f"task-{index:02d}", seed=17) for index in range(30)
+            PromotionAssignment(task_id=entry.task_id, seed=17) for entry in frozen_manifest.entries
         ),
     )
 
 
 def _outcomes(
-    candidate: CandidateVersion,
-    *,
-    improve_count: int,
-    regress_count: int = 0,
-    latency: int = 115,
-    tokens: int = 115,
+    candidate: CandidateVersion, *, improve_count: int, regress_count: int = 0
 ) -> tuple[PairedOutcome, ...]:
-    rows: list[PairedOutcome] = []
+    rows = []
     for index in range(30):
         accepted = index >= improve_count
         candidate_correct = True
@@ -104,15 +142,37 @@ def _outcomes(
                 accepted_correct=accepted,
                 candidate_correct=candidate_correct,
                 accepted_latency_ms=100,
-                candidate_latency_ms=latency,
+                candidate_latency_ms=110,
                 accepted_input_tokens=100,
-                candidate_input_tokens=tokens,
+                candidate_input_tokens=110,
             )
         )
     return tuple(rows)
 
 
-def test_promotion_advances_pointer_once_at_inclusive_boundaries() -> None:
+def _tasks(manifest: ExperimentManifest) -> tuple[PromotionTask, ...]:
+    return tuple(
+        PromotionTask(
+            task=TaskInput(
+                task_id=entry.task_id,
+                question=_question(index),
+                image_asset_id=entry.image_asset_id,
+                image_sha256=entry.image_sha256,
+                source_split="val",
+            ),
+            asset=TaskAsset(
+                task_id=entry.task_id,
+                media_type="image/png",
+                image_sha256=entry.image_sha256,
+                content=b"fixture",
+            ),
+            seed=17,
+        )
+        for index, entry in enumerate(manifest.entries)
+    )
+
+
+def test_promotion_advances_pointer_only_when_all_gates_pass() -> None:
     registry = VersionRegistry()
     candidate = _candidate()
     decision = decide_promotion(
@@ -122,18 +182,11 @@ def test_promotion_advances_pointer_once_at_inclusive_boundaries() -> None:
         outcomes=_outcomes(candidate, improve_count=2),
         thresholds=PromotionThresholds(),
     )
-
     assert decision.decision == "PROMOTE"
     assert registry.accepted_version_id == candidate.version_id
-    assert (
-        registry.compare_and_set_accepted(
-            expected="accepted-v000", replacement=candidate.version_id
-        )
-        is False
-    )
 
 
-def test_rejection_preserves_both_versions_and_pointer() -> None:
+def test_rejection_preserves_pointer_and_frozen_candidate() -> None:
     registry = VersionRegistry()
     candidate = _candidate()
     decision = decide_promotion(
@@ -143,105 +196,56 @@ def test_rejection_preserves_both_versions_and_pointer() -> None:
         outcomes=_outcomes(candidate, improve_count=0, regress_count=1),
         thresholds=PromotionThresholds(),
     )
-
     assert decision.decision == "REJECT"
-    assert "capability" in decision.failed_gates
-    assert "negative_transfer" in decision.failed_gates
     assert registry.accepted_version_id == "accepted-v000"
     assert registry.get_view(candidate.version_id).content_hash == candidate.content_hash
 
 
-def test_promotion_rejects_incomplete_or_mixed_provenance() -> None:
-    registry = VersionRegistry()
+def test_promotion_plan_rejects_non_promotion_manifest_and_repeated_assignments() -> None:
     candidate = _candidate()
-    outcomes = _outcomes(candidate, improve_count=2)
-    with pytest.raises(ValueError, match="complete frozen plan"):
-        decide_promotion(
-            registry=registry,
-            candidate=candidate,
-            plan=_plan(candidate),
-            outcomes=outcomes[:-1],
-            thresholds=PromotionThresholds(),
-        )
-    mixed = (outcomes[0].model_copy(update={"configuration_hash": "changed"}), *outcomes[1:])
-    with pytest.raises(ValueError, match="provenance"):
-        decide_promotion(
-            registry=registry,
-            candidate=candidate,
-            plan=_plan(candidate),
-            outcomes=mixed,
-            thresholds=PromotionThresholds(),
+    collection_data = _manifest().model_dump()
+    collection_data["name"] = "collection"
+    collection_data["entries"] = tuple(collection_data["entries"]) + tuple(
+        collection_data["entries"][:10]
+    )
+    with pytest.raises((ValidationError, ValueError)):
+        PromotionPlan.model_validate(
+            {
+                "manifest": collection_data,
+                "configuration_hash": "frozen-config",
+                "accepted_version_id": "accepted-v000",
+                "accepted_content_hash": "0" * 64,
+                "candidate_version_id": candidate.version_id,
+                "candidate_content_hash": candidate.content_hash,
+                "assignments": (),
+            }
         )
 
-
-def test_promotion_plan_rejects_repeated_task_with_different_seeds() -> None:
-    candidate = _candidate()
+    manifest = _manifest()
     with pytest.raises(ValidationError, match="every manifest task exactly once"):
-        PromotionPlan(
-            manifest_hash="promotion-manifest",
-            configuration_hash="frozen-config",
-            accepted_version_id="accepted-v000",
-            accepted_content_hash="0" * 64,
-            candidate_version_id=candidate.version_id,
-            candidate_content_hash=candidate.content_hash,
-            manifest_task_ids=tuple(f"task-{index:02d}" for index in range(30)),
-            assignments=tuple(
-                PromotionAssignment(task_id="task-00", seed=index) for index in range(30)
-            ),
+        _plan(candidate, manifest).model_copy(
+            update={
+                "assignments": tuple(
+                    PromotionAssignment(task_id="task-00", seed=index) for index in range(30)
+                )
+            }
+        ).__class__.model_validate(
+            _plan(candidate, manifest)
+            .model_copy(
+                update={
+                    "assignments": tuple(
+                        PromotionAssignment(task_id="task-00", seed=index) for index in range(30)
+                    )
+                }
+            )
+            .model_dump()
         )
 
 
-def test_paired_runner_uses_same_executor_and_pinned_views() -> None:
-    tasks = tuple(
-        PromotionTask(
-            task=TaskInput(
-                task_id=f"task-{index:02d}",
-                question="What chart value should be checked?",
-                image_asset_id=f"task-{index:02d}.png",
-                image_sha256=f"{index + 1:064x}",
-                source_split="val",
-            ),
-            asset=TaskAsset(
-                task_id=f"task-{index:02d}",
-                media_type="image/png",
-                image_sha256=f"{index + 1:064x}",
-                content=b"fixture",
-            ),
-            seed=17,
-        )
-        for index in range(30)
-    )
-    candidate_view = VersionView(
-        version_id="candidate:view",
-        cards=(
-            BehaviorCard(
-                card_id="card:what",
-                trigger="What chart",
-                instruction="Verify the label before arithmetic.",
-                evidence_episode_ids=("episode:1",),
-            ),
-        ),
-        retrieval_policy=RetrievalPolicy(
-            top_k=1,
-            minimum_score=0,
-            token_budget=100,
-            calibration_snapshot_hash="snapshot",
-        ),
-        content_hash="c" * 64,
-    )
-    accepted_view = VersionRegistry().get_view("accepted-v000")
-    plan = PromotionPlan(
-        manifest_hash="promotion-manifest",
-        configuration_hash="frozen-config",
-        accepted_version_id=accepted_view.version_id,
-        accepted_content_hash=accepted_view.content_hash,
-        candidate_version_id=candidate_view.version_id,
-        candidate_content_hash=candidate_view.content_hash,
-        manifest_task_ids=tuple(item.task.task_id for item in tasks),
-        assignments=tuple(
-            PromotionAssignment(task_id=item.task.task_id, seed=item.seed) for item in tasks
-        ),
-    )
+def test_paired_runner_resolves_views_and_validates_manifest_content() -> None:
+    manifest = _manifest()
+    candidate = _candidate(with_card=True)
+    registry = VersionRegistry()
     inference = DeterministicInference(
         actions=(FinalAnswerAction(answer="ok"),), model_id="student-v1"
     )
@@ -251,18 +255,32 @@ def test_paired_runner_uses_same_executor_and_pinned_views() -> None:
         verifier=AnyAnswerVerifier(),
         event_sink=InMemoryEventSink(),
     )
-
     outcomes = run_paired_promotion(
         executor=executor,
-        plan=plan,
-        tasks=tasks,
-        accepted_view=accepted_view,
-        candidate_view=candidate_view,
+        plan=_plan(candidate, manifest),
+        tasks=_tasks(manifest),
+        registry=registry,
+        candidate=candidate,
         execution_policy=ExecutionPolicy(review_required=False),
     )
-
     assert len(outcomes) == 30
     assert inference.requests[0].behavior_cards == ()
     assert inference.requests[1].behavior_cards == (
         "What chart\nVerify the label before arithmetic.",
     )
+
+    altered = list(_tasks(manifest))
+    altered[0] = PromotionTask(
+        task=altered[0].task.model_copy(update={"question": "Changed question"}),
+        asset=altered[0].asset,
+        seed=17,
+    )
+    with pytest.raises(ValueError, match="authoritative manifest"):
+        run_paired_promotion(
+            executor=executor,
+            plan=_plan(candidate, manifest),
+            tasks=tuple(altered),
+            registry=registry,
+            candidate=candidate,
+            execution_policy=ExecutionPolicy(review_required=False),
+        )

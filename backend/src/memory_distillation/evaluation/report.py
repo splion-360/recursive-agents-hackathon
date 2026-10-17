@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memory_distillation.review_policy import KappaArtifact
 from memory_distillation.task_execution import ExecutionPolicy
 
 Condition = Literal["C0", "C1", "C2", "C3"]
@@ -86,6 +87,15 @@ class C3Assignment(BaseModel):
     token_count: int
 
 
+class C2RetrievalTarget(BaseModel):
+    """Observed C2 retrieval shape that one C3 assignment must match."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    card_count: int = Field(ge=0)
+    token_count: int = Field(ge=0)
+
+
 class ExperimentReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -109,37 +119,52 @@ class ExperimentReport(BaseModel):
 
 
 def frozen_condition_policies(
-    *, configuration_hash: str, execution: ExecutionPolicy
+    *,
+    configuration_hash: str,
+    execution: ExecutionPolicy,
+    kappa: KappaArtifact,
 ) -> tuple[ConditionPolicy, ...]:
     """Declare the only allowed experimental differences."""
 
+    unreviewed = ExecutionPolicy.model_validate(
+        execution.model_dump()
+        | {"review_required": False, "kappa_hash": None, "kappa_guidance": ()}
+    )
+    reviewed = ExecutionPolicy.model_validate(
+        execution.model_dump()
+        | {
+            "review_required": True,
+            "kappa_hash": kappa.content_hash,
+            "kappa_guidance": kappa.guidance,
+        }
+    )
     return (
         ConditionPolicy(
             condition="C0",
             reviewer_enabled=False,
             memory_view="none",
-            execution=execution.model_copy(update={"review_required": False}),
+            execution=unreviewed,
             configuration_hash=configuration_hash,
         ),
         ConditionPolicy(
             condition="C1",
             reviewer_enabled=True,
             memory_view="none",
-            execution=execution.model_copy(update={"review_required": True}),
+            execution=reviewed,
             configuration_hash=configuration_hash,
         ),
         ConditionPolicy(
             condition="C2",
             reviewer_enabled=False,
             memory_view="accepted",
-            execution=execution.model_copy(update={"review_required": False}),
+            execution=unreviewed,
             configuration_hash=configuration_hash,
         ),
         ConditionPolicy(
             condition="C3",
             reviewer_enabled=False,
             memory_view="irrelevant",
-            execution=execution.model_copy(update={"review_required": False}),
+            execution=unreviewed,
             configuration_hash=configuration_hash,
         ),
     )
@@ -173,6 +198,11 @@ def validate_condition_policies(policies: tuple[ConditionPolicy, ...]) -> None:
             raise ValueError(f"invalid frozen policy for {policy.condition}")
         if policy.execution.review_required != policy.reviewer_enabled:
             raise ValueError("Reviewer flag and execution policy disagree")
+        if policy.condition == "C1":
+            if policy.execution.kappa_hash is None or not policy.execution.kappa_guidance:
+                raise ValueError("C1 must bind frozen Kappa identity and guidance")
+        elif policy.execution.kappa_hash is not None or policy.execution.kappa_guidance:
+            raise ValueError("only C1 may receive Kappa guidance")
         if any(
             getattr(policy.execution, field) != getattr(baseline, field) for field in budget_fields
         ):
@@ -285,13 +315,14 @@ def assign_irrelevant_memory(
     *,
     task_terms: dict[str, tuple[str, ...]],
     donor_cards: tuple[IrrelevantDonorCard, ...],
-    card_count: int,
-    target_token_count: int,
+    c2_targets: dict[str, C2RetrievalTarget],
     assignment_seed: int,
 ) -> tuple[C3Semantics, tuple[C3Assignment, ...]]:
     """Freeze trigger-mismatched, count- and token-matched C3 assignments."""
 
-    if card_count <= 0:
+    if set(c2_targets) != set(task_terms):
+        raise ValueError("C2 targets must cover every task exactly once")
+    if all(target.card_count <= 0 for target in c2_targets.values()):
         return (
             C3Semantics(
                 status="DEGENERATE",
@@ -302,6 +333,9 @@ def assign_irrelevant_memory(
         )
     assignments: list[C3Assignment] = []
     for task_id, terms in sorted(task_terms.items()):
+        target = c2_targets[task_id]
+        if target.card_count == 0:
+            continue
         normalized_terms = {term.casefold() for term in terms}
         eligible = tuple(
             card
@@ -309,9 +343,11 @@ def assign_irrelevant_memory(
             if normalized_terms.isdisjoint(term.casefold() for term in card.trigger_terms)
         )
         choices = []
-        for cards in itertools.combinations(eligible, card_count):
+        for cards in itertools.combinations(eligible, target.card_count):
             token_count = sum(card.token_count for card in cards)
-            if abs(token_count - target_token_count) <= target_token_count * 0.10:
+            if target.token_count > 0 and abs(token_count - target.token_count) <= (
+                target.token_count * 0.10
+            ):
                 assignment_key = (
                     f"{assignment_seed}:{task_id}:{','.join(card.card_id for card in cards)}"
                 )

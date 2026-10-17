@@ -1,6 +1,7 @@
 import pytest
 
 from memory_distillation.evaluation import (
+    C2RetrievalTarget,
     C3Semantics,
     ConditionPolicy,
     ConditionResult,
@@ -9,7 +10,23 @@ from memory_distillation.evaluation import (
     build_experiment_report,
     frozen_condition_policies,
 )
+from memory_distillation.review_policy import KappaArtifact
 from memory_distillation.task_execution import ExecutionPolicy
+
+
+def _kappa() -> KappaArtifact:
+    return KappaArtifact.model_construct(
+        content_hash="a" * 64,
+        guidance=("Inspect relevant chart labels before computing.",),
+    )
+
+
+def _policies() -> tuple[ConditionPolicy, ...]:
+    return frozen_condition_policies(
+        configuration_hash="frozen",
+        execution=ExecutionPolicy(),
+        kappa=_kappa(),
+    )
 
 
 def _result(condition: str, task_id: str, correct: bool, *, intervention: bool) -> ConditionResult:
@@ -27,7 +44,7 @@ def _result(condition: str, task_id: str, correct: bool, *, intervention: bool) 
 
 
 def test_c0_c3_report_is_paired_deterministic_and_complete() -> None:
-    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    policies = _policies()
     results = tuple(
         _result(condition, task_id, correct=condition != "C0", intervention=condition == "C1")
         for condition in ("C0", "C1", "C2", "C3")
@@ -57,7 +74,7 @@ def test_c0_c3_report_is_paired_deterministic_and_complete() -> None:
 
 
 def test_unavailable_c3_is_reported_without_fabricated_rows() -> None:
-    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    policies = _policies()
     results = tuple(
         _result(condition, "t1", correct=True, intervention=condition != "C0")
         for condition in ("C0", "C1", "C2")
@@ -75,7 +92,7 @@ def test_unavailable_c3_is_reported_without_fabricated_rows() -> None:
 
 
 def test_unpaired_assignments_fail_closed() -> None:
-    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    policies = _policies()
     with pytest.raises(ValueError, match="identical paired"):
         build_experiment_report(
             manifest_hash="final",
@@ -89,7 +106,7 @@ def test_unpaired_assignments_fail_closed() -> None:
 
 
 def test_condition_policies_reject_budget_or_configuration_drift() -> None:
-    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    policies = _policies()
     drifted_budget = policies[2].model_copy(
         update={"execution": policies[2].execution.model_copy(update={"max_actions": 100})}
     )
@@ -119,7 +136,7 @@ def test_condition_policies_reject_budget_or_configuration_drift() -> None:
 
 
 def test_duplicate_rows_fail_closed_and_partial_c3_is_honest() -> None:
-    policies = frozen_condition_policies(configuration_hash="frozen", execution=ExecutionPolicy())
+    policies = _policies()
     rows = tuple(
         _result(condition, task_id, True, intervention=condition == "C1")
         for condition in ("C0", "C1", "C2")
@@ -152,17 +169,37 @@ def test_irrelevant_memory_assignment_is_seeded_and_trigger_mismatched() -> None
     first = assign_irrelevant_memory(
         task_terms={"t1": ("chart",)},
         donor_cards=donors,
-        card_count=2,
-        target_token_count=100,
+        c2_targets={"t1": C2RetrievalTarget(card_count=2, token_count=100)},
         assignment_seed=20261016,
     )
     second = assign_irrelevant_memory(
         task_terms={"t1": ("chart",)},
         donor_cards=donors,
-        card_count=2,
-        target_token_count=100,
+        c2_targets={"t1": C2RetrievalTarget(card_count=2, token_count=100)},
         assignment_seed=20261016,
     )
     assert first == second
     assert first[0].status == "AVAILABLE"
     assert first[1][0].card_ids == ("weather", "finance")
+
+
+def test_irrelevant_memory_matches_each_tasks_c2_shape() -> None:
+    donors = (
+        IrrelevantDonorCard(card_id="a", trigger_terms=("weather",), token_count=50),
+        IrrelevantDonorCard(card_id="b", trigger_terms=("finance",), token_count=50),
+    )
+    semantics, assignments = assign_irrelevant_memory(
+        task_terms={"one": ("chart",), "two": ("chart",)},
+        donor_cards=donors,
+        c2_targets={
+            "one": C2RetrievalTarget(card_count=1, token_count=50),
+            "two": C2RetrievalTarget(card_count=2, token_count=100),
+        },
+        assignment_seed=17,
+    )
+
+    assert semantics.status == "AVAILABLE"
+    assert {item.task_id: len(item.card_ids) for item in assignments} == {
+        "one": 1,
+        "two": 2,
+    }

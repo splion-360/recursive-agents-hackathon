@@ -5,6 +5,7 @@ from memory_distillation.evaluation.orchestrator import (
     run_offline_conditions,
 )
 from memory_distillation.evaluation.report import (
+    C2RetrievalTarget,
     C3Assignment,
     C3Semantics,
     ConditionMetrics,
@@ -20,6 +21,7 @@ from memory_distillation.evaluation.report import (
 )
 
 __all__ = [
+    "C2RetrievalTarget",
     "C3Assignment",
     "C3Semantics",
     "ConditionMetrics",

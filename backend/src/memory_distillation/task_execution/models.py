@@ -63,7 +63,16 @@ class ExecutionPolicy(BaseModel):
     max_crop_coordinate: int = Field(default=8_192, ge=1)
     review_required: bool = False
     max_review_calls: int = Field(default=8, ge=0)
+    kappa_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     kappa_guidance: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def require_consistent_reviewer_policy(self) -> "ExecutionPolicy":
+        if self.review_required and (self.kappa_hash is None or not self.kappa_guidance):
+            raise ValueError("reviewed execution requires frozen Kappa identity and guidance")
+        if not self.review_required and (self.kappa_hash is not None or self.kappa_guidance):
+            raise ValueError("Reviewer-free execution cannot receive Kappa guidance")
+        return self
 
 
 class Observation(BaseModel):
@@ -82,6 +91,7 @@ class RunStartedEvent(BaseModel):
     sequence: int
     task_id: str
     seed: int
+    kappa_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class ActionProposedEvent(BaseModel):
@@ -183,3 +193,4 @@ class TaskRun(BaseModel):
     tool_calls: int = Field(ge=0)
     python_calls: int = Field(ge=0)
     review_calls: int = Field(ge=0)
+    kappa_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")

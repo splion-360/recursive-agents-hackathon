@@ -35,7 +35,7 @@ class VersionEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     version_id: str
-    role: Literal["ACCEPTED", "CANDIDATE", "REJECTED"]
+    role: Literal["ACCEPTED", "CANDIDATE", "REJECTED", "PREVIOUS"]
     card_count: int
     content_hash: str
 
@@ -86,25 +86,19 @@ def synthetic_evidence() -> tuple[
         status="completed",
         proposal="Run Python over the extracted values without rechecking labels.",
         review_decision="REPLACE",
-        accepted_action="Inspect the chart crop, then calculate the aggregate in OpenShell.",
-        tool_result="OpenShell completed with a validated aggregate.",
+        accepted_action="Inspect the chart crop, then calculate in the deterministic sandbox.",
+        tool_result="Deterministic sandbox completed with a validated aggregate.",
         eligible_for_consolidation=True,
     )
     versions = (
         VersionEvidence(
-            version_id="accepted-v000", role="ACCEPTED", card_count=0, content_hash="0" * 16
+            version_id="accepted-v000", role="PREVIOUS", card_count=0, content_hash="0" * 16
         ),
         VersionEvidence(
             version_id="candidate-demo-001",
-            role="CANDIDATE",
+            role="ACCEPTED",
             card_count=1,
             content_hash="8f41d2e7c6a905bd",
-        ),
-        VersionEvidence(
-            version_id="candidate-rejected-000",
-            role="REJECTED",
-            card_count=2,
-            content_hash="3a10b8f1ec2d4470",
         ),
     )
     promotion = PromotionEvidence(
@@ -181,8 +175,22 @@ def synthetic_evidence() -> tuple[
                 model_id="synthetic-student-v1",
                 request_id="synthetic:student:2",
             ),
-            RunCompletedEvent(
+            ActionReviewedEvent(
                 sequence=5,
+                task_id=run.task_id,
+                review=ActionReview(
+                    decision="pass",
+                    proposed_action=FinalAnswerAction(answer="synthetic prediction"),
+                    accepted_action=FinalAnswerAction(answer="synthetic prediction"),
+                    model_id="synthetic-reviewer-v1",
+                    request_id="synthetic:reviewer:2",
+                    input_tokens=24,
+                    output_tokens=4,
+                    latency_ms=60,
+                ),
+            ),
+            RunCompletedEvent(
+                sequence=6,
                 task_id=run.task_id,
                 termination_reason="completed",
                 correct=True,

@@ -1,19 +1,20 @@
 """Paired promotion metrics, deterministic gates, and atomic pointer updates."""
 
 from dataclasses import dataclass
+from hashlib import sha256
 from statistics import median
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memory_distillation.benchmark import TaskAsset, TaskInput
+from memory_distillation.benchmark import ExperimentManifest, TaskAsset, TaskInput
 from memory_distillation.task_execution import ExecutionPolicy, TaskExecutor
 from memory_distillation.versioning.models import (
-    BehaviorCard,
     CandidateVersion,
     RetrievalPolicy,
     VersionView,
 )
+from memory_distillation.versioning.retrieval import retrieve_behavior_cards
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,20 +77,21 @@ class PromotionPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    manifest_hash: str
+    manifest: ExperimentManifest
     configuration_hash: str
     accepted_version_id: str
     accepted_content_hash: str
     candidate_version_id: str
     candidate_content_hash: str
-    manifest_task_ids: tuple[str, ...]
     assignments: tuple[PromotionAssignment, ...]
 
     @model_validator(mode="after")
     def require_complete_unique_manifest(self) -> "PromotionPlan":
-        manifest_ids = set(self.manifest_task_ids)
+        if self.manifest.name != "promotion":
+            raise ValueError("promotion plan requires the Promotion manifest")
+        manifest_ids = {entry.task_id for entry in self.manifest.entries}
         assignment_ids = {item.task_id for item in self.assignments}
-        if len(self.manifest_task_ids) != 30 or len(manifest_ids) != 30:
+        if len(self.manifest.entries) != 30 or len(manifest_ids) != 30:
             raise ValueError("promotion manifest requires exactly 30 unique tasks")
         if len(self.assignments) != 30 or assignment_ids != manifest_ids:
             raise ValueError("promotion plan must assign every manifest task exactly once")
@@ -257,14 +259,16 @@ def run_paired_promotion(
     executor: TaskExecutor,
     plan: PromotionPlan,
     tasks: tuple[PromotionTask, ...],
-    accepted_view: VersionView,
-    candidate_view: VersionView,
+    registry: VersionRegistry,
+    candidate: CandidateVersion,
     execution_policy: ExecutionPolicy,
 ) -> tuple[PairedOutcome, ...]:
     """Run the complete frozen Promotion plan through one TaskExecutor seam."""
 
     if execution_policy.review_required:
         raise ValueError("paired memory promotion must run without the online Reviewer")
+    accepted_view = registry.get_view(plan.accepted_version_id)
+    candidate_view = registry.freeze_candidate(candidate)
     if (
         accepted_view.version_id != plan.accepted_version_id
         or accepted_view.content_hash != plan.accepted_content_hash
@@ -276,6 +280,17 @@ def run_paired_promotion(
     plan_assignments = {(item.task_id, item.seed) for item in plan.assignments}
     if len(tasks) != 30 or task_assignments != plan_assignments:
         raise ValueError("promotion tasks do not cover the complete frozen plan")
+    manifest_by_id = {entry.task_id: entry for entry in plan.manifest.entries}
+    for item in tasks:
+        entry = manifest_by_id[item.task.task_id]
+        if (
+            item.task.source_split != entry.source_split
+            or item.task.image_asset_id != entry.image_asset_id
+            or item.task.image_sha256 != entry.image_sha256
+            or sha256(item.task.question.encode()).hexdigest() != entry.question_sha256
+            or item.asset.image_sha256 != entry.image_sha256
+        ):
+            raise ValueError("promotion task does not match the authoritative manifest")
     outcomes: list[PairedOutcome] = []
     for item in sorted(tasks, key=lambda value: (value.task.task_id, value.seed)):
         accepted_run = executor.run(
@@ -312,30 +327,6 @@ def run_paired_promotion(
             )
         )
     return tuple(outcomes)
-
-
-def retrieve_behavior_cards(view: VersionView, task: TaskInput) -> tuple[str, ...]:
-    """Select only cards from one pinned immutable version view."""
-    question_terms = set(task.question.casefold().split())
-    matching: list[tuple[float, BehaviorCard]] = []
-    for card in view.cards:
-        trigger_terms = set(card.trigger.casefold().split())
-        union = question_terms | trigger_terms
-        score = len(question_terms & trigger_terms) / len(union) if union else 0
-        if score >= view.retrieval_policy.minimum_score:
-            matching.append((score, card))
-    selected: list[str] = []
-    used_tokens = 0
-    for _, card in sorted(matching, key=lambda item: (-item[0], item[1].card_id)):
-        if len(selected) >= view.retrieval_policy.top_k:
-            break
-        text = f"{card.trigger}\n{card.instruction}"
-        token_estimate = len(text.split())
-        if used_tokens + token_estimate > view.retrieval_policy.token_budget:
-            continue
-        selected.append(text)
-        used_tokens += token_estimate
-    return tuple(selected)
 
 
 def _relative_change(baseline: float, candidate: float) -> float:

@@ -119,6 +119,7 @@ class KappaCalibrationSession:
         self._split = split
         self._proposal_hash: str | None = None
         self._artifact: KappaArtifact | None = None
+        self._failed = False
 
     def freeze(
         self,
@@ -127,16 +128,22 @@ class KappaCalibrationSession:
         executions: tuple[CalibrationExecution, ...],
         privacy: CalibrationPrivacyContext,
     ) -> KappaArtifact:
+        if self._failed:
+            raise ValueError("calibration session already failed and is terminal")
         proposal_hash = hash_hstar_proposal(proposal)
         if self._proposal_hash is not None and self._proposal_hash != proposal_hash:
             raise ValueError("calibration session already started a different H-star proposal")
         self._proposal_hash = proposal_hash
-        artifact = _freeze_kappa(
-            proposal=proposal,
-            split=self._split,
-            executions=executions,
-            privacy=privacy,
-        )
+        try:
+            artifact = _freeze_kappa(
+                proposal=proposal,
+                split=self._split,
+                executions=executions,
+                privacy=privacy,
+            )
+        except Exception:
+            self._failed = True
+            raise
         if self._artifact is not None and self._artifact != artifact:
             raise ValueError("calibration session is already frozen")
         self._artifact = artifact
@@ -178,11 +185,11 @@ def _freeze_kappa(
         rule
         for rule in proposal.rules
         if by_rule[rule.rule_id].action_compatible
-        and by_rule[rule.rule_id].regression_helped >= by_rule[rule.rule_id].regression_harmed
+        and by_rule[rule.rule_id].regression_helped > by_rule[rule.rule_id].regression_harmed
         and by_rule[rule.rule_id].discovery_helped > 0
     )
     if not accepted:
-        raise ValueError("no Kappa rule passed deterministic regression screening")
+        raise ValueError("no Kappa rule demonstrated measured regression improvement")
     _validate_privacy(accepted, privacy)
     canonical_payload = {
         "manifest_hash": split.manifest_hash,

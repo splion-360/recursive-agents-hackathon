@@ -22,8 +22,11 @@ from memory_distillation.versioning.promotion import (
     PromotionThresholds,
     VersionRegistry,
     decide_promotion,
-    retrieve_behavior_cards,
     run_paired_promotion,
+)
+from memory_distillation.versioning.retrieval import (
+    retrieve_behavior_cards,
+    select_behavior_cards,
 )
 
 __all__ = [
@@ -48,4 +51,5 @@ __all__ = [
     "decide_promotion",
     "retrieve_behavior_cards",
     "run_paired_promotion",
+    "select_behavior_cards",
 ]

@@ -6,7 +6,7 @@ type RunEvidence = {
   accepted_action: string; tool_result: string; eligible_for_consolidation: boolean;
 };
 type VersionEvidence = {
-  version_id: string; role: "ACCEPTED" | "CANDIDATE" | "REJECTED";
+  version_id: string; role: "ACCEPTED" | "CANDIDATE" | "REJECTED" | "PREVIOUS";
   card_count: number; content_hash: string;
 };
 type PromotionEvidence = {
@@ -75,7 +75,7 @@ export function App() {
           <div className="connector">→</div>
           <article className="flow-card reviewer"><small>PRIVATE REVIEW BOUNDARY</small><strong>{run.review_decision}</strong><p>{run.accepted_action}</p></article>
           <div className="connector">→</div>
-          <article className="flow-card tool"><small>ACCEPTED ACTION ONLY</small><strong>OpenShell</strong><p>{run.tool_result}</p></article>
+          <article className="flow-card tool"><small>ACCEPTED ACTION ONLY</small><strong>Deterministic sandbox</strong><p>{run.tool_result}</p></article>
         </div>
         <p className="privacy-note">Private Reviewer reasoning is intentionally absent from this replay.</p>
       </section>
@@ -99,7 +99,7 @@ export function App() {
           <div className="section-heading"><div><span>03</span><h2>Promotion gate</h2></div></div>
           <div className={`decision ${evidence.promotion.decision.toLowerCase()}`}>{evidence.promotion.decision}</div>
           <dl>
-            <div><dt>Capability Δ</dt><dd>+{(evidence.promotion.capability_delta * 100).toFixed(0)}%</dd></div>
+            <div><dt>Capability Δ</dt><dd>{formatSignedPoints(evidence.promotion.capability_delta)}</dd></div>
             <div><dt>Negative transfer</dt><dd>{(evidence.promotion.negative_transfer_rate * 100).toFixed(0)}%</dd></div>
             <div><dt>Accepted pointer</dt><dd>{evidence.promotion.accepted_after}</dd></div>
           </dl>
@@ -129,4 +129,9 @@ export function App() {
 
 function conditionLabel(condition: MetricEvidence["condition"]): string {
   return { C0: "Student only", C1: "+ Reviewer", C2: "+ Shared Brain", C3: "+ Irrelevant memory" }[condition];
+}
+
+function formatSignedPoints(value: number): string {
+  const points = value * 100;
+  return `${points >= 0 ? "+" : ""}${points.toFixed(0)} pp`;
 }

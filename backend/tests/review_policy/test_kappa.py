@@ -211,3 +211,67 @@ def test_calibration_session_rejects_a_second_proposal() -> None:
             executions=executions,
             privacy=CalibrationPrivacyContext(forbidden_phrases=("never matches",)),
         )
+
+
+def test_kappa_requires_strict_regression_improvement() -> None:
+    split = _split()
+    rule = KappaRule(
+        rule_id="neutral",
+        action_types=("inspect_image",),
+        instruction="Inspect the chart.",
+    )
+    proposal = HStarProposal(
+        proposal_id="neutral", rules=(rule,), discovery_task_ids=split.discovery_task_ids
+    )
+    executions = _executions_for_proposal(
+        split,
+        proposal,
+        rule,
+        discovery_helped=1,
+        regression_helped=0,
+        regression_harmed=0,
+    )
+
+    with pytest.raises(ValueError, match="measured regression improvement"):
+        freeze_kappa(
+            session=KappaCalibrationSession(split),
+            proposal=proposal,
+            executions=executions,
+            privacy=CalibrationPrivacyContext(forbidden_phrases=("never matches",)),
+        )
+
+
+def test_failed_kappa_attempt_is_terminal() -> None:
+    split = _split()
+    rule = KappaRule(
+        rule_id="leak",
+        action_types=("inspect_image",),
+        instruction="Inspect fixture.png before answering.",
+    )
+    proposal = HStarProposal(
+        proposal_id="single-attempt", rules=(rule,), discovery_task_ids=split.discovery_task_ids
+    )
+    executions = _executions_for_proposal(
+        split,
+        proposal,
+        rule,
+        discovery_helped=1,
+        regression_helped=1,
+        regression_harmed=0,
+    )
+    session = KappaCalibrationSession(split)
+    with pytest.raises(ValueError, match="specific"):
+        freeze_kappa(
+            session=session,
+            proposal=proposal,
+            executions=executions,
+            privacy=CalibrationPrivacyContext(forbidden_phrases=("fixture.png",)),
+        )
+
+    with pytest.raises(ValueError, match="already failed"):
+        freeze_kappa(
+            session=session,
+            proposal=proposal,
+            executions=executions,
+            privacy=CalibrationPrivacyContext(forbidden_phrases=("different",)),
+        )

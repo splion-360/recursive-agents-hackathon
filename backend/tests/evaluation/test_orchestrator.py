@@ -1,3 +1,5 @@
+import pytest
+
 from memory_distillation.benchmark import Score, TaskAsset, TaskInput
 from memory_distillation.evaluation import (
     C3Assignment,
@@ -6,6 +8,7 @@ from memory_distillation.evaluation import (
     run_offline_conditions,
 )
 from memory_distillation.inference import DeterministicInference
+from memory_distillation.review_policy import KappaArtifact
 from memory_distillation.sandbox import DeterministicSandbox
 from memory_distillation.task_execution import (
     DeterministicReviewer,
@@ -21,6 +24,13 @@ from memory_distillation.versioning import BehaviorCard, RetrievalPolicy, Versio
 class AnyAnswerVerifier:
     def score(self, task_id: str, prediction: str) -> Score:
         return Score(correct=prediction == "ok", method="text_exact")
+
+
+def _kappa() -> KappaArtifact:
+    return KappaArtifact.model_construct(
+        content_hash="a" * 64,
+        guidance=("Inspect relevant chart labels before computing.",),
+    )
 
 
 def test_conditions_share_executor_but_isolate_reviewer_and_memory() -> None:
@@ -94,7 +104,9 @@ def test_conditions_share_executor_but_isolate_reviewer_and_memory() -> None:
         executor=executor,
         tasks=(evaluation_task,),
         policies=frozen_condition_policies(
-            configuration_hash="frozen", execution=ExecutionPolicy()
+            configuration_hash="frozen",
+            execution=ExecutionPolicy(),
+            kappa=_kappa(),
         ),
         accepted_view=accepted_view,
         c3_assignments=(
@@ -110,3 +122,24 @@ def test_conditions_share_executor_but_isolate_reviewer_and_memory() -> None:
     assert inference.requests[3].behavior_cards == (
         "Weather table\nCheck units before arithmetic.",
     )
+
+    inference.requests.clear()
+    with pytest.raises(ValueError, match="token provenance"):
+        run_offline_conditions(
+            executor=executor,
+            tasks=(evaluation_task,),
+            policies=frozen_condition_policies(
+                configuration_hash="frozen",
+                execution=ExecutionPolicy(),
+                kappa=_kappa(),
+            ),
+            accepted_view=accepted_view,
+            c3_assignments=(
+                C3Assignment(
+                    task_id=task.task_id,
+                    card_ids=(donor_card.card_id,),
+                    token_count=999,
+                ),
+            ),
+        )
+    assert inference.requests == []

@@ -4,7 +4,15 @@ import pytest
 
 from memory_distillation.task_execution import FinalAnswerAction
 from memory_distillation.task_execution.models import ActionProposedEvent, RunStartedEvent
-from memory_distillation.telemetry import JsonlEventSink, ReplayReader
+from memory_distillation.telemetry import JsonlEventSink, ReplayArtifact, ReplayReader
+
+
+def _artifact(path: Path, *, phrases: tuple[str, ...] = ("private-reference",)) -> ReplayArtifact:
+    return ReplayArtifact.create(
+        path=path,
+        origin="SYNTHETIC_FIXTURE",
+        forbidden_phrases=phrases,
+    )
 
 
 def test_jsonl_is_append_only_and_replay_is_explicit(tmp_path: Path) -> None:
@@ -16,7 +24,7 @@ def test_jsonl_is_append_only_and_replay_is_explicit(tmp_path: Path) -> None:
     for event in events:
         sink.emit(event)
 
-    replay = ReplayReader().read(path, synthetic=True)
+    replay = ReplayReader().read(_artifact(path))
     assert replay.mode == "REPLAY"
     assert replay.synthetic is True
     assert replay.events == (*events, *events)
@@ -30,7 +38,7 @@ def test_replay_ignores_crash_truncated_final_line(tmp_path: Path) -> None:
     with path.open("a", encoding="utf-8") as stream:
         stream.write('{"type":"broken"')
 
-    assert ReplayReader().read(path, synthetic=True).events == (event,)
+    assert ReplayReader().read(_artifact(path)).events == (event,)
 
 
 def test_replay_rejects_answer_bearing_reference_content(tmp_path: Path) -> None:
@@ -45,8 +53,27 @@ def test_replay_rejects_answer_bearing_reference_content(tmp_path: Path) -> None
     JsonlEventSink(path).emit(event)
 
     with pytest.raises(ValueError, match="answer-bearing"):
-        ReplayReader().read(
-            path,
-            synthetic=True,
-            forbidden_phrases=("secret-reference-answer",),
-        )
+        ReplayReader().read(_artifact(path, phrases=("secret-reference-answer",)))
+
+
+def test_replay_redacts_predictions_and_detects_trace_mutation(tmp_path: Path) -> None:
+    path = tmp_path / "run.jsonl"
+    event = ActionProposedEvent(
+        sequence=0,
+        task_id="fixture",
+        action=FinalAnswerAction(answer="model-prediction"),
+        model_id="student-v1",
+        request_id="request-1",
+    )
+    JsonlEventSink(path).emit(event)
+    artifact = _artifact(path)
+
+    replay = ReplayReader().read(artifact)
+    projected = replay.events[0]
+    assert isinstance(projected, ActionProposedEvent)
+    assert isinstance(projected.action, FinalAnswerAction)
+    assert projected.action.answer == "[REDACTED]"
+
+    JsonlEventSink(path).emit(RunStartedEvent(sequence=1, task_id="changed", seed=1))
+    with pytest.raises(ValueError, match="immutable provenance"):
+        ReplayReader().read(artifact)
