@@ -1,5 +1,10 @@
 """Operational Memory public contracts."""
 
+from memory_distillation.operational_memory.memmachine import (
+    MemMachineAtomicityError,
+    MemMachineError,
+    MemMachineOperationalMemory,
+)
 from memory_distillation.operational_memory.models import (
     EpisodeProvenance,
     ReviewedEpisode,
@@ -10,6 +15,9 @@ from memory_distillation.operational_memory.store import InMemoryOperationalMemo
 __all__ = [
     "EpisodeProvenance",
     "InMemoryOperationalMemory",
+    "MemMachineAtomicityError",
+    "MemMachineError",
+    "MemMachineOperationalMemory",
     "ReviewedEpisode",
     "episode_from_run",
 ]

@@ -6,7 +6,7 @@ import re
 from hashlib import sha256
 
 from memory_distillation.benchmark import ExperimentManifest
-from memory_distillation.operational_memory import ReviewedEpisode
+from memory_distillation.operational_memory.models import ReviewedEpisode
 from memory_distillation.review_policy import KappaArtifact
 from memory_distillation.versioning.models import (
     BehaviorCard,
