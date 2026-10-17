@@ -7,10 +7,12 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from memory_distillation.benchmark import TaskAsset, TaskInput
+from memory_distillation.calibration import DiscoveryObservation, HStarAnalysisRequest
 from memory_distillation.inference.crusoe import (
     CrusoeAdmissionError,
     CrusoeBudget,
     CrusoeClient,
+    CrusoeHStarAnalyst,
     CrusoeProviderError,
     CrusoeReviewer,
     CrusoeStudentInference,
@@ -424,6 +426,66 @@ def test_reviewer_uses_kappa_and_returns_a_typed_replacement() -> None:
     serialized = json.dumps(submitted)
     assert "Require visual evidence before answering." in serialized
     assert "synthetic-image" not in serialized
+
+
+def test_hstar_analyst_receives_discovery_only_and_returns_bounded_rules() -> None:
+    submitted: dict[str, Any] = {}
+    discovery_ids = tuple(f"d{index}" for index in range(8))
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/models"):
+            return _catalog_response(model_id="fixture/hstar")
+        submitted.update(json.loads(request.content))
+        return _completion_response(
+            content=json.dumps(
+                {
+                    "proposal_id": "hstar-1",
+                    "parent_revision": 0,
+                    "revision": 1,
+                    "rules": [
+                        {
+                            "rule_id": "verify-labels",
+                            "action_types": ["inspect_image", "final_answer"],
+                            "instruction": "Verify chart labels before answering.",
+                        }
+                    ],
+                    "discovery_task_ids": discovery_ids,
+                }
+            ),
+            model_id="fixture/hstar",
+        )
+
+    analysis_request = HStarAnalysisRequest(
+        manifest_hash="m" * 64,
+        discovery_task_ids=discovery_ids,
+        observations=tuple(
+            DiscoveryObservation(
+                task_id=task_id,
+                question="What is shown?",
+                correct=False,
+                termination_reason="completed",
+                action_types=("final_answer",),
+            )
+            for task_id in discovery_ids
+        ),
+    )
+    with CrusoeClient(
+        base_url="https://inference.example.test/v1",
+        api_key=SecretStr("fixture-secret"),
+        budget=CrusoeBudget(max_cost_usd=Decimal("0.01"), max_total_tokens=5000),
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        result = CrusoeHStarAnalyst(
+            client=client,
+            model_id="fixture/hstar",
+            max_output_tokens=256,
+        ).propose(analysis_request, seed=17)
+
+    assert result.proposal.discovery_task_ids == discovery_ids
+    assert result.proposal.rules[0].rule_id == "verify-labels"
+    serialized = json.dumps(submitted)
+    assert "What is shown?" in serialized
+    assert '"regression"' not in serialized
 
 
 def test_live_gate_rejects_a_reviewer_that_passes_the_unsupported_answer() -> None:

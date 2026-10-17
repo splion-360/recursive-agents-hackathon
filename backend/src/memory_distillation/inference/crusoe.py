@@ -12,10 +12,15 @@ import httpx2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from memory_distillation.benchmark import TaskAsset
+from memory_distillation.calibration.models import (
+    HStarAnalysisRequest,
+    HStarAnalysisResult,
+)
 from memory_distillation.inference.protocol import (
     InferenceRequest,
     InferenceResult,
 )
+from memory_distillation.review_policy import HStarProposal
 from memory_distillation.settings import Settings
 from memory_distillation.task_execution.models import StudentAction
 from memory_distillation.task_execution.review import ReviewRequest, ReviewResult
@@ -541,6 +546,58 @@ class CrusoeReviewer:
             output_tokens=result.output_tokens,
             latency_ms=result.latency_ms,
             retry_count=result.retry_count,
+            actual_cost_usd=result.actual_cost_usd,
+        )
+
+
+class CrusoeHStarAnalyst:
+    """Propose one bounded review-policy revision from discovery-only evidence."""
+
+    def __init__(
+        self,
+        *,
+        client: CrusoeClient,
+        model_id: str,
+        max_output_tokens: int,
+    ) -> None:
+        client.get_model(model_id)
+        self._client = client
+        self._model_id = model_id
+        self._max_output_tokens = max_output_tokens
+
+    def propose(self, request: HStarAnalysisRequest, *, seed: int) -> HStarAnalysisResult:
+        result = self._client.complete_json(
+            model_id=self._model_id,
+            messages=(
+                {
+                    "role": "system",
+                    "content": (
+                        "Analyze only the supplied ChartQA discovery outcomes. Propose one "
+                        "revision containing one to three general, answer-free review rules. "
+                        "Rules must use only inspect_image, crop, run_python, or final_answer. "
+                        "Do not include task IDs, questions, chart values, answers, paths, or "
+                        "unsupported tools in rule instructions. Return the exact discovery "
+                        "task IDs only in discovery_task_ids."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(request.model_dump(mode="json"), sort_keys=True),
+                },
+            ),
+            output_type=HStarProposal,
+            max_output_tokens=self._max_output_tokens,
+            seed=seed,
+        )
+        if not 1 <= len(result.output.rules) <= 3:
+            raise ValueError("H-star proposal must contain between one and three rules")
+        return HStarAnalysisResult(
+            proposal=result.output,
+            model_id=result.model_id,
+            request_id=result.request_id,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            latency_ms=result.latency_ms,
             actual_cost_usd=result.actual_cost_usd,
         )
 

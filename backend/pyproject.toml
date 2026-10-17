@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
+memory-distillation = "memory_distillation.cli:main"
 verify-crusoe = "memory_distillation.inference.verify_crusoe:main"
 verify-memmachine = "memory_distillation.operational_memory.verify_memmachine:main"
 verify-openshell = "memory_distillation.sandbox.verify_openshell:main"

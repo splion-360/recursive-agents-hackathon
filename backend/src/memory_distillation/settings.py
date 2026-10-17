@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     crusoe_max_total_tokens: int = Field(default=500_000, gt=0)
     crusoe_timeout_seconds: float = Field(default=60, gt=0)
     crusoe_max_retries: int = Field(default=1, ge=0, le=3)
+    crusoe_student_max_output_tokens: int = Field(default=512, ge=64, le=4_096)
+    crusoe_reviewer_max_output_tokens: int = Field(default=512, ge=64, le=4_096)
+    crusoe_hstar_max_output_tokens: int = Field(default=1_200, ge=128, le=8_192)
 
     openshell_sandbox_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,18}$")
     openshell_gateway: str = Field(default="nemoclaw", min_length=1)
