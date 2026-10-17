@@ -38,7 +38,12 @@ def _result(condition: str, task_id: str, correct: bool, *, intervention: bool) 
             "correct": correct,
             "reviewer_intervened": intervention,
             "latency_ms": 100 if condition == "C0" else 110,
-            "tokens": 100 if condition == "C0" else 105,
+            "input_tokens": 80 if condition == "C0" else 85,
+            "output_tokens": 20,
+            "model_calls": 1,
+            "tool_calls": 0,
+            "review_calls": 1 if condition == "C1" else 0,
+            "retrieved_card_count": 1 if condition in {"C2", "C3"} else 0,
         }
     )
 
@@ -53,10 +58,10 @@ def test_c0_c3_report_is_paired_deterministic_and_complete() -> None:
     semantics = C3Semantics(status="AVAILABLE", assignment_seed=99, reason="matched donor pool")
 
     first = build_experiment_report(
-        manifest_hash="final", policies=policies, results=results, c3=semantics
+        manifest_hash="final", policies=policies, results=results, c3=semantics, kappa=_kappa()
     )
     second = build_experiment_report(
-        manifest_hash="final", policies=policies, results=results, c3=semantics
+        manifest_hash="final", policies=policies, results=results, c3=semantics, kappa=_kappa()
     )
 
     assert first == second
@@ -86,6 +91,7 @@ def test_unavailable_c3_is_reported_without_fabricated_rows() -> None:
         c3=C3Semantics(
             status="UNAVAILABLE", assignment_seed=99, reason="no irrelevant donor cards"
         ),
+        kappa=_kappa(),
     )
     assert report.c3.status == "UNAVAILABLE"
     assert {item.condition for item in report.metrics} == {"C0", "C1", "C2"}
@@ -102,6 +108,7 @@ def test_unpaired_assignments_fail_closed() -> None:
                 _result("C1", "different", True, intervention=True),
             ),
             c3=C3Semantics(status="UNAVAILABLE", assignment_seed=1, reason="none"),
+            kappa=_kappa(),
         )
 
 
@@ -119,6 +126,7 @@ def test_condition_policies_reject_budget_or_configuration_drift() -> None:
                 for condition in ("C0", "C1", "C2", "C3")
             ),
             c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="matched"),
+            kappa=_kappa(),
         )
     drifted_config: ConditionPolicy = policies[3].model_copy(
         update={"configuration_hash": "different"}
@@ -132,6 +140,23 @@ def test_condition_policies_reject_budget_or_configuration_drift() -> None:
                 for condition in ("C0", "C1", "C2", "C3")
             ),
             c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="matched"),
+            kappa=_kappa(),
+        )
+
+    wrong_kappa = KappaArtifact.model_construct(
+        content_hash="b" * 64,
+        guidance=("Different guidance.",),
+    )
+    with pytest.raises(ValueError, match="exact frozen Kappa"):
+        build_experiment_report(
+            manifest_hash="final",
+            policies=policies,
+            results=tuple(
+                _result(condition, "t1", True, intervention=condition == "C1")
+                for condition in ("C0", "C1", "C2", "C3")
+            ),
+            c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="matched"),
+            kappa=wrong_kappa,
         )
 
 
@@ -148,6 +173,7 @@ def test_duplicate_rows_fail_closed_and_partial_c3_is_honest() -> None:
             policies=policies,
             results=(*rows, rows[-1]),
             c3=C3Semantics(status="UNAVAILABLE", assignment_seed=1, reason="none"),
+            kappa=_kappa(),
         )
 
     report = build_experiment_report(
@@ -155,6 +181,7 @@ def test_duplicate_rows_fail_closed_and_partial_c3_is_honest() -> None:
         policies=policies,
         results=(*rows, _result("C3", "t1", True, intervention=False)),
         c3=C3Semantics(status="AVAILABLE", assignment_seed=1, reason="one honest match"),
+        kappa=_kappa(),
     )
     assert report.metrics[-1].condition == "C3"
     assert report.metrics[-1].sample_size == 1

@@ -67,9 +67,9 @@ class ReplayReader:
             raise ValueError("replay trace bytes do not match immutable provenance")
         events: list[RunEvent] = []
         adapter = TypeAdapter(RunEvent)
+        if content and not content.endswith(b"\n"):
+            raise ValueError("replay trace contains a truncated JSONL record")
         for line in content.splitlines(keepends=True):
-            if not line.endswith(b"\n"):
-                break
             raw = json.loads(line)
             _validate_sanitized(json.dumps(raw), artifact.forbidden_phrases)
             events.append(adapter.validate_python(_public_projection(raw)))

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from hashlib import sha256
 
 from memory_distillation.benchmark import ExperimentManifest
 from memory_distillation.operational_memory import ReviewedEpisode
@@ -74,6 +75,16 @@ def build_candidate(
     task_ids = [item.task.task_id for item in ordered_pass]
     if len(task_ids) != len(manifest_ids) or set(task_ids) != set(manifest_ids):
         raise ValueError("Collection pass does not cover the complete Collection manifest")
+    manifest_by_id = {entry.task_id: entry for entry in collection_manifest.entries}
+    for episode in ordered_pass:
+        entry = manifest_by_id[episode.task.task_id]
+        if (
+            episode.task.source_split != entry.source_split
+            or episode.task.image_asset_id != entry.image_asset_id
+            or episode.task.image_sha256 != entry.image_sha256
+            or sha256(episode.task.question.encode()).hexdigest() != entry.question_sha256
+        ):
+            raise ValueError("Collection episode does not match the authoritative manifest")
     if not contamination_phrases:
         raise ValueError("candidate requires explicit contamination phrases")
     ordered_episodes = tuple(item for item in ordered_pass if item.eligible_for_consolidation)

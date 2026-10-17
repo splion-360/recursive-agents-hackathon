@@ -112,6 +112,7 @@ def test_conditions_share_executor_but_isolate_reviewer_and_memory() -> None:
         c3_assignments=(
             C3Assignment(task_id=task.task_id, card_ids=(donor_card.card_id,), token_count=6),
         ),
+        kappa=_kappa(),
     )
 
     assert [item.condition for item in results] == ["C0", "C1", "C2", "C3"]
@@ -141,5 +142,6 @@ def test_conditions_share_executor_but_isolate_reviewer_and_memory() -> None:
                     token_count=999,
                 ),
             ),
+            kappa=_kappa(),
         )
     assert inference.requests == []

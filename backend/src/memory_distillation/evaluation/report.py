@@ -33,7 +33,12 @@ class ConditionResult(BaseModel):
     correct: bool
     reviewer_intervened: bool
     latency_ms: int = Field(ge=0)
-    tokens: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    model_calls: int = Field(ge=0)
+    tool_calls: int = Field(ge=0)
+    review_calls: int = Field(ge=0)
+    retrieved_card_count: int = Field(ge=0)
     valid: bool = True
 
 
@@ -45,7 +50,14 @@ class ConditionMetrics(BaseModel):
     accuracy: float
     intervention_rate: float
     mean_latency_ms: float
-    mean_tokens: float
+    p50_latency_ms: float
+    p95_latency_ms: float
+    mean_input_tokens: float
+    mean_output_tokens: float
+    mean_model_calls: float
+    mean_tool_calls: float
+    mean_review_calls: float
+    no_retrieval_rate: float
     validity_rate: float
 
 
@@ -57,7 +69,11 @@ class PairedContrast(BaseModel):
     paired_sample_size: int
     capability_delta: float
     capability_ci95: tuple[float, float]
+    positive_transfer_rate: float
     negative_transfer_rate: float
+    condition_wins: int
+    baseline_wins: int
+    reviewer_gap_recovery: float | None
     latency_effect_ms: float
     token_effect: float
     mcnemar_exact_p: float
@@ -101,6 +117,7 @@ class ExperimentReport(BaseModel):
 
     schema_version: Literal["experiment-report.v1"] = "experiment-report.v1"
     manifest_hash: str
+    kappa_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     policies: tuple[ConditionPolicy, ...]
     metrics: tuple[ConditionMetrics, ...]
     contrasts: tuple[PairedContrast, ...]
@@ -170,7 +187,9 @@ def frozen_condition_policies(
     )
 
 
-def validate_condition_policies(policies: tuple[ConditionPolicy, ...]) -> None:
+def validate_condition_policies(
+    policies: tuple[ConditionPolicy, ...], *, kappa: KappaArtifact
+) -> None:
     """Reject any condition set that changes more than Reviewer and memory access."""
 
     expected = {
@@ -199,8 +218,11 @@ def validate_condition_policies(policies: tuple[ConditionPolicy, ...]) -> None:
         if policy.execution.review_required != policy.reviewer_enabled:
             raise ValueError("Reviewer flag and execution policy disagree")
         if policy.condition == "C1":
-            if policy.execution.kappa_hash is None or not policy.execution.kappa_guidance:
-                raise ValueError("C1 must bind frozen Kappa identity and guidance")
+            if (
+                policy.execution.kappa_hash != kappa.content_hash
+                or policy.execution.kappa_guidance != kappa.guidance
+            ):
+                raise ValueError("C1 must bind the exact frozen Kappa artifact")
         elif policy.execution.kappa_hash is not None or policy.execution.kappa_guidance:
             raise ValueError("only C1 may receive Kappa guidance")
         if any(
@@ -215,13 +237,14 @@ def build_experiment_report(
     policies: tuple[ConditionPolicy, ...],
     results: tuple[ConditionResult, ...],
     c3: C3Semantics,
+    kappa: KappaArtifact,
 ) -> ExperimentReport:
     """Aggregate paired evidence without receiving any writable memory dependency."""
 
     grouped: dict[Condition, list[ConditionResult]] = {
         condition: [] for condition in ("C0", "C1", "C2", "C3")
     }
-    validate_condition_policies(policies)
+    validate_condition_policies(policies, kappa=kappa)
     row_keys = [(item.condition, item.task_id, item.seed) for item in results]
     if len(set(row_keys)) != len(row_keys):
         raise ValueError("duplicate condition result rows are forbidden")
@@ -253,6 +276,7 @@ def build_experiment_report(
     )
     return ExperimentReport(
         manifest_hash=manifest_hash,
+        kappa_hash=kappa.content_hash,
         policies=policies,
         metrics=metrics,
         contrasts=contrasts,
@@ -270,7 +294,14 @@ def _condition_metrics(
         accuracy=sum(item.correct for item in items) / size,
         intervention_rate=sum(item.reviewer_intervened for item in items) / size,
         mean_latency_ms=sum(item.latency_ms for item in items) / size,
-        mean_tokens=sum(item.tokens for item in items) / size,
+        p50_latency_ms=_percentile(tuple(item.latency_ms for item in items), 0.50),
+        p95_latency_ms=_percentile(tuple(item.latency_ms for item in items), 0.95),
+        mean_input_tokens=sum(item.input_tokens for item in items) / size,
+        mean_output_tokens=sum(item.output_tokens for item in items) / size,
+        mean_model_calls=sum(item.model_calls for item in items) / size,
+        mean_tool_calls=sum(item.tool_calls for item in items) / size,
+        mean_review_calls=sum(item.review_calls for item in items) / size,
+        no_retrieval_rate=sum(item.retrieved_card_count == 0 for item in items) / size,
         validity_rate=sum(item.valid for item in items) / size,
     )
 
@@ -293,18 +324,32 @@ def _contrast(
     condition_wins = sum(
         not baseline[(item.task_id, item.seed)].correct and item.correct for item in ordered
     )
+    baseline_incorrect = sum(not baseline[(item.task_id, item.seed)].correct for item in ordered)
     return PairedContrast(
         condition=condition,
         paired_sample_size=size,
         capability_delta=mean,
         capability_ci95=ci,
+        positive_transfer_rate=condition_wins / size,
         negative_transfer_rate=baseline_wins / size,
+        condition_wins=condition_wins,
+        baseline_wins=baseline_wins,
+        reviewer_gap_recovery=(
+            condition_wins / baseline_incorrect
+            if condition == "C1" and baseline_incorrect
+            else None
+        ),
         latency_effect_ms=sum(
             item.latency_ms - baseline[(item.task_id, item.seed)].latency_ms for item in ordered
         )
         / size,
         token_effect=sum(
-            item.tokens - baseline[(item.task_id, item.seed)].tokens for item in ordered
+            (item.input_tokens + item.output_tokens)
+            - (
+                baseline[(item.task_id, item.seed)].input_tokens
+                + baseline[(item.task_id, item.seed)].output_tokens
+            )
+            for item in ordered
         )
         / size,
         mcnemar_exact_p=_mcnemar_exact(baseline_wins, condition_wins),
@@ -403,3 +448,9 @@ def _mcnemar_exact(baseline_wins: int, condition_wins: int) -> float:
         for index in range(min(baseline_wins, condition_wins) + 1)
     )
     return min(1.0, 2 * tail)
+
+
+def _percentile(values: tuple[int, ...], quantile: float) -> float:
+    ordered = sorted(values)
+    index = math.ceil(quantile * len(ordered)) - 1
+    return float(ordered[max(0, index)])

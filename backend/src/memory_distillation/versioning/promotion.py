@@ -268,7 +268,12 @@ def run_paired_promotion(
     if execution_policy.review_required:
         raise ValueError("paired memory promotion must run without the online Reviewer")
     accepted_view = registry.get_view(plan.accepted_version_id)
-    candidate_view = registry.freeze_candidate(candidate)
+    candidate_view = VersionView(
+        version_id=candidate.version_id,
+        cards=candidate.cards,
+        retrieval_policy=candidate.retrieval_policy,
+        content_hash=candidate.content_hash,
+    )
     if (
         accepted_view.version_id != plan.accepted_version_id
         or accepted_view.content_hash != plan.accepted_content_hash
@@ -291,6 +296,7 @@ def run_paired_promotion(
             or item.asset.image_sha256 != entry.image_sha256
         ):
             raise ValueError("promotion task does not match the authoritative manifest")
+    candidate_view = registry.freeze_candidate(candidate)
     outcomes: list[PairedOutcome] = []
     for item in sorted(tasks, key=lambda value: (value.task.task_id, value.seed)):
         accepted_run = executor.run(

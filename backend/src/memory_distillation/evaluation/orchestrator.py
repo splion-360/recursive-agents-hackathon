@@ -10,6 +10,7 @@ from memory_distillation.evaluation.report import (
     ConditionResult,
     validate_condition_policies,
 )
+from memory_distillation.review_policy import KappaArtifact
 from memory_distillation.task_execution import TaskExecutor
 from memory_distillation.versioning import (
     VersionView,
@@ -31,12 +32,13 @@ def run_offline_conditions(
     policies: tuple[ConditionPolicy, ...],
     accepted_view: VersionView,
     c3_assignments: tuple[C3Assignment, ...],
+    kappa: KappaArtifact,
 ) -> tuple[ConditionResult, ...]:
     """Execute frozen conditions without accepting any writable memory capability."""
 
     if not tasks:
         raise ValueError("evaluation requires at least one task")
-    validate_condition_policies(policies)
+    validate_condition_policies(policies, kappa=kappa)
     policy_by_condition = {policy.condition: policy for policy in policies}
     assignment_by_task = {item.task_id: item for item in c3_assignments}
     if len(assignment_by_task) != len(c3_assignments):
@@ -103,7 +105,12 @@ def run_offline_conditions(
                     correct=bool(run.score and run.score.correct),
                     reviewer_intervened=any(review.decision == "replace" for review in run.reviews),
                     latency_ms=run.elapsed_ms,
-                    tokens=run.input_tokens + run.output_tokens,
+                    input_tokens=run.input_tokens,
+                    output_tokens=run.output_tokens,
+                    model_calls=len(run.actions),
+                    tool_calls=run.tool_calls,
+                    review_calls=run.review_calls,
+                    retrieved_card_count=len(context),
                     valid=run.termination_reason == "completed",
                 )
             )

@@ -222,6 +222,12 @@ def test_candidate_rejects_incomplete_collection_and_wrong_kappa() -> None:
     with pytest.raises(ValueError, match="Collection Kappa"):
         _build(kappa=kappa.model_copy(update={"content_hash": "a" * 64}))
 
+    forged = episodes[0].model_copy(
+        update={"task": episodes[0].task.model_copy(update={"question": "Forged question"})}
+    )
+    with pytest.raises(ValueError, match="authoritative manifest"):
+        _build(episodes=(forged, *episodes[1:]))
+
 
 def test_candidate_rejects_fabricated_retrieval_trials() -> None:
     _, _, _, _, calibration = _candidate_inputs()

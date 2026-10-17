@@ -31,14 +31,15 @@ def test_jsonl_is_append_only_and_replay_is_explicit(tmp_path: Path) -> None:
     assert "private_reason" not in replay.model_dump_json()
 
 
-def test_replay_ignores_crash_truncated_final_line(tmp_path: Path) -> None:
+def test_replay_rejects_crash_truncated_final_line(tmp_path: Path) -> None:
     path = tmp_path / "run.jsonl"
     event = RunStartedEvent(sequence=0, task_id="fixture", seed=17)
     JsonlEventSink(path).emit(event)
     with path.open("a", encoding="utf-8") as stream:
         stream.write('{"type":"broken"')
 
-    assert ReplayReader().read(_artifact(path)).events == (event,)
+    with pytest.raises(ValueError, match="truncated"):
+        ReplayReader().read(_artifact(path))
 
 
 def test_replay_rejects_answer_bearing_reference_content(tmp_path: Path) -> None:
