@@ -1,5 +1,7 @@
 """Isolated H-star/Kappa calibration lifecycle."""
 
+from typing import TYPE_CHECKING, Any
+
 from memory_distillation.calibration.models import (
     AdaptationDecision,
     CalibrationProgress,
@@ -13,10 +15,12 @@ from memory_distillation.calibration.models import (
     PilotIntervention,
     PilotSummary,
 )
-from memory_distillation.calibration.orchestrator import (
-    calibrate_review_policy,
-    combined_manifest_hash,
-)
+
+if TYPE_CHECKING:
+    from memory_distillation.calibration.orchestrator import (
+        calibrate_review_policy,
+        combined_manifest_hash,
+    )
 
 __all__ = [
     "AdaptationDecision",
@@ -33,3 +37,13 @@ __all__ = [
     "calibrate_review_policy",
     "combined_manifest_hash",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Load orchestration lazily to keep provider imports cycle-free."""
+
+    if name in {"calibrate_review_policy", "combined_manifest_hash"}:
+        from memory_distillation.calibration import orchestrator
+
+        return getattr(orchestrator, name)
+    raise AttributeError(name)

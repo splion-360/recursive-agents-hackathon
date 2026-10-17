@@ -1,8 +1,22 @@
 """Smoke tests for the minimal HTTP scaffold."""
 
+import subprocess
+import sys
+
 from fastapi.testclient import TestClient
 
 from memory_distillation.main import app
+
+
+def test_composition_root_imports_in_a_fresh_interpreter() -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", "from memory_distillation.main import app; assert app"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_health_reports_ready() -> None:
