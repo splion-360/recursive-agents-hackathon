@@ -23,7 +23,7 @@ from memory_distillation.task_execution.models import (
     TerminationReason,
 )
 from memory_distillation.task_execution.review import Reviewer, ReviewRequest
-from memory_distillation.telemetry import EventSink
+from memory_distillation.telemetry.sink import EventSink
 
 
 class Verifier(Protocol):
