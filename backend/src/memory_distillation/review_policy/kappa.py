@@ -98,6 +98,31 @@ class KappaArtifact(BaseModel):
 
     @model_validator(mode="after")
     def verify_canonical_identity(self) -> "KappaArtifact":
+        rule_ids = [rule.rule_id for rule in self.rules]
+        if len(set(rule_ids)) != len(rule_ids):
+            raise ValueError("Kappa rule identifiers must be unique")
+        evidence_ids = [item.rule_id for item in self.evidence]
+        if len(set(evidence_ids)) != len(evidence_ids):
+            raise ValueError("Kappa evidence rule identifiers must be unique")
+        evidence_by_rule = {item.rule_id: item for item in self.evidence}
+        for rule in self.rules:
+            evidence = evidence_by_rule.get(rule.rule_id)
+            if evidence is None:
+                raise ValueError("every accepted Kappa rule requires evidence")
+            if (
+                len(evidence.discovery_task_ids) != 8
+                or len(set(evidence.discovery_task_ids)) != 8
+                or len(evidence.regression_task_ids) != 8
+                or len(set(evidence.regression_task_ids)) != 8
+                or set(evidence.discovery_task_ids) & set(evidence.regression_task_ids)
+            ):
+                raise ValueError("accepted Kappa rule evidence requires isolated 8+8 tasks")
+            if (
+                not evidence.action_compatible
+                or evidence.discovery_helped <= 0
+                or evidence.regression_helped <= evidence.regression_harmed
+            ):
+                raise ValueError("accepted Kappa rule evidence does not pass screening")
         if self.guidance != tuple(rule.instruction for rule in self.rules):
             raise ValueError("Kappa guidance does not match its frozen executable rules")
         payload = {

@@ -60,6 +60,7 @@ class TaskExecutor:
     ) -> TaskRun:
         """Execute one answer-free task with deterministic budgets and evidence."""
 
+        policy = ExecutionPolicy.model_validate(policy.model_dump(mode="json"))
         if asset.task_id != task.task_id or asset.image_sha256 != task.image_sha256:
             raise ValueError("task asset does not match task input")
 

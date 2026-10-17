@@ -1,9 +1,14 @@
 """Offline behavior tests for the minimal Student action loop."""
 
+import hashlib
+import json
+
 import pytest
+from pydantic import ValidationError
 
 from memory_distillation.benchmark import Score, TaskAsset, TaskInput
 from memory_distillation.inference import DeterministicInference
+from memory_distillation.review_policy import KappaArtifact, KappaRule, RuleEvidence
 from memory_distillation.sandbox import DeterministicSandbox, SandboxResult
 from memory_distillation.task_execution import (
     CropAction,
@@ -20,7 +25,40 @@ from memory_distillation.task_execution import (
 )
 from memory_distillation.telemetry import InMemoryEventSink
 
-KAPPA_HASH = "a" * 64
+
+def _kappa(instruction: str = "Prefer exact arithmetic.") -> KappaArtifact:
+    rule = KappaRule(
+        rule_id="review-arithmetic",
+        action_types=("inspect_image", "crop", "run_python", "final_answer"),
+        instruction=instruction,
+    )
+    evidence = RuleEvidence(
+        rule_id=rule.rule_id,
+        discovery_task_ids=tuple(f"d-{index}" for index in range(8)),
+        regression_task_ids=tuple(f"r-{index}" for index in range(8)),
+        discovery_helped=1,
+        regression_helped=1,
+        regression_harmed=0,
+        action_compatible=True,
+    )
+    payload = {
+        "manifest_hash": "calibration-manifest",
+        "revision": 1,
+        "rules": [rule.model_dump(mode="json")],
+        "evidence": [evidence.model_dump(mode="json")],
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return KappaArtifact(
+        artifact_id=f"kappa:{digest[:16]}",
+        manifest_hash="calibration-manifest",
+        revision=1,
+        rules=(rule,),
+        guidance=(instruction,),
+        evidence=(evidence,),
+        content_hash=digest,
+    )
 
 
 class FixtureVerifier:
@@ -125,6 +163,7 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
             )
         }
     )
+    kappa = _kappa()
 
     run = TaskExecutor(
         inference=inference,
@@ -137,8 +176,7 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
         asset=asset,
         policy=ExecutionPolicy(
             review_required=True,
-            kappa_hash=KAPPA_HASH,
-            kappa_guidance=("Prefer exact arithmetic.",),
+            kappa=kappa,
         ),
         seed=17,
     )
@@ -155,7 +193,7 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
     assert run.output_tokens == 10
     assert run.elapsed_ms == 17
     assert "hidden" not in run.model_dump_json()
-    assert run.kappa_hash == KAPPA_HASH
+    assert run.kappa_hash == kappa.content_hash
 
 
 @pytest.mark.parametrize(
@@ -188,8 +226,7 @@ def test_reviewer_failure_and_budget_exhaustion_fail_closed(
         policy=ExecutionPolicy(
             review_required=True,
             max_review_calls=max_review_calls,
-            kappa_hash=KAPPA_HASH,
-            kappa_guidance=("Review every action.",),
+            kappa=_kappa("Review every action."),
         ),
         seed=17,
     )
@@ -201,10 +238,24 @@ def test_reviewer_failure_and_budget_exhaustion_fail_closed(
 
 def test_review_policy_requires_frozen_kappa_identity() -> None:
     with pytest.raises(ValueError, match="frozen Kappa"):
-        ExecutionPolicy(review_required=True, kappa_guidance=("Review every action.",))
+        ExecutionPolicy(review_required=True)
 
     with pytest.raises(ValueError, match="Reviewer-free"):
-        ExecutionPolicy(kappa_hash=KAPPA_HASH, kappa_guidance=("Should not be visible.",))
+        ExecutionPolicy(kappa=_kappa("Should not be visible."))
+
+
+def test_review_policy_accepts_only_one_validated_kappa_artifact() -> None:
+    kappa = _kappa()
+    policy = ExecutionPolicy(review_required=True, kappa=kappa)
+
+    assert policy.kappa_hash == kappa.content_hash
+    assert policy.kappa_guidance == kappa.guidance
+    with pytest.raises(ValidationError):
+        ExecutionPolicy(
+            review_required=True,
+            kappa_hash=kappa.content_hash,
+            kappa_guidance=("Substituted guidance.",),
+        )
 
 
 def _run_fixture() -> TaskRun:

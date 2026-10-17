@@ -36,7 +36,10 @@ def build_candidate(
         raise ValueError("candidate construction requires the Collection manifest")
     if not episodes:
         raise ValueError("candidate requires a complete Collection pass")
-    ordered_pass = tuple(sorted(episodes, key=lambda item: item.episode_id))
+    validated_episodes = tuple(
+        ReviewedEpisode.model_validate(item.model_dump(mode="json")) for item in episodes
+    )
+    ordered_pass = tuple(sorted(validated_episodes, key=lambda item: item.episode_id))
     if len({item.episode_id for item in ordered_pass}) != len(ordered_pass):
         raise ValueError("Collection pass contains duplicate episode identifiers")
     provenances = [item.provenance for item in ordered_pass]

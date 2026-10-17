@@ -61,7 +61,9 @@ def _manifest() -> ExperimentManifest:
     )
 
 
-def _candidate(*, with_card: bool = False) -> CandidateVersion:
+def _candidate(
+    *, with_card: bool = False, parent_version_id: str = "accepted-v000"
+) -> CandidateVersion:
     snapshot = EpisodeSnapshot(episode_ids=("e1",), episode_hashes=("h1",), snapshot_hash="s")
     cards = (
         (
@@ -83,7 +85,7 @@ def _candidate(*, with_card: bool = False) -> CandidateVersion:
     )
     kappa_hash = "b" * 64
     payload = {
-        "parent_version_id": "accepted-v000",
+        "parent_version_id": parent_version_id,
         "kappa_hash": kappa_hash,
         "snapshot": snapshot.model_dump(mode="json"),
         "cards": [card.model_dump(mode="json") for card in cards],
@@ -95,7 +97,7 @@ def _candidate(*, with_card: bool = False) -> CandidateVersion:
     ).hexdigest()
     return CandidateVersion(
         version_id=f"candidate:{digest[:16]}",
-        parent_version_id="accepted-v000",
+        parent_version_id=parent_version_id,
         kappa_hash=kappa_hash,
         snapshot=snapshot,
         cards=cards,
@@ -284,3 +286,66 @@ def test_paired_runner_resolves_views_and_validates_manifest_content() -> None:
             candidate=candidate,
             execution_policy=ExecutionPolicy(review_required=False),
         )
+
+
+def test_paired_runner_rejects_unvalidated_candidate_copy_before_mutation() -> None:
+    manifest = _manifest()
+    candidate = _candidate()
+    injected = BehaviorCard(
+        card_id="card:injected",
+        trigger="What chart",
+        instruction="Use unverified injected guidance.",
+        evidence_episode_ids=("episode:forged",),
+    )
+    forged = candidate.model_copy(update={"cards": (injected,)})
+    registry = VersionRegistry()
+    inference = DeterministicInference(
+        actions=(FinalAnswerAction(answer="ok"),), model_id="student-v1"
+    )
+
+    with pytest.raises(ValidationError, match="canonical identity"):
+        run_paired_promotion(
+            executor=TaskExecutor(
+                inference=inference,
+                sandbox=DeterministicSandbox(results={}),
+                verifier=AnyAnswerVerifier(),
+                event_sink=InMemoryEventSink(),
+            ),
+            plan=_plan(candidate, manifest),
+            tasks=_tasks(manifest),
+            registry=registry,
+            candidate=forged,
+            execution_policy=ExecutionPolicy(),
+        )
+
+    assert inference.requests == []
+    with pytest.raises(KeyError):
+        registry.get_view(candidate.version_id)
+
+
+def test_paired_runner_rejects_noncurrent_parent_before_mutation() -> None:
+    manifest = _manifest()
+    candidate = _candidate(parent_version_id="accepted-v999")
+    registry = VersionRegistry()
+    inference = DeterministicInference(
+        actions=(FinalAnswerAction(answer="ok"),), model_id="student-v1"
+    )
+
+    with pytest.raises(ValueError, match="parent"):
+        run_paired_promotion(
+            executor=TaskExecutor(
+                inference=inference,
+                sandbox=DeterministicSandbox(results={}),
+                verifier=AnyAnswerVerifier(),
+                event_sink=InMemoryEventSink(),
+            ),
+            plan=_plan(candidate, manifest),
+            tasks=_tasks(manifest),
+            registry=registry,
+            candidate=candidate,
+            execution_policy=ExecutionPolicy(),
+        )
+
+    assert inference.requests == []
+    with pytest.raises(KeyError):
+        registry.get_view(candidate.version_id)

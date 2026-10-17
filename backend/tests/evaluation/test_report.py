@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import pytest
 
 from memory_distillation.evaluation import (
@@ -10,14 +13,44 @@ from memory_distillation.evaluation import (
     build_experiment_report,
     frozen_condition_policies,
 )
-from memory_distillation.review_policy import KappaArtifact
+from memory_distillation.review_policy import KappaArtifact, KappaRule, RuleEvidence
 from memory_distillation.task_execution import ExecutionPolicy
 
 
-def _kappa() -> KappaArtifact:
-    return KappaArtifact.model_construct(
-        content_hash="a" * 64,
-        guidance=("Inspect relevant chart labels before computing.",),
+def _kappa(
+    instruction: str = "Inspect relevant chart labels before computing.",
+) -> KappaArtifact:
+    rule = KappaRule(
+        rule_id="inspect-labels",
+        action_types=("inspect_image",),
+        instruction=instruction,
+    )
+    evidence = RuleEvidence(
+        rule_id=rule.rule_id,
+        discovery_task_ids=tuple(f"d-{index}" for index in range(8)),
+        regression_task_ids=tuple(f"r-{index}" for index in range(8)),
+        discovery_helped=1,
+        regression_helped=1,
+        regression_harmed=0,
+        action_compatible=True,
+    )
+    payload = {
+        "manifest_hash": "calibration-manifest",
+        "revision": 1,
+        "rules": [rule.model_dump(mode="json")],
+        "evidence": [evidence.model_dump(mode="json")],
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return KappaArtifact(
+        artifact_id=f"kappa:{digest[:16]}",
+        manifest_hash="calibration-manifest",
+        revision=1,
+        rules=(rule,),
+        guidance=(instruction,),
+        evidence=(evidence,),
+        content_hash=digest,
     )
 
 
@@ -144,10 +177,7 @@ def test_condition_policies_reject_budget_or_configuration_drift() -> None:
             kappa=_kappa(),
         )
 
-    wrong_kappa = KappaArtifact.model_construct(
-        content_hash="b" * 64,
-        guidance=("Different guidance.",),
-    )
+    wrong_kappa = _kappa("Different guidance.")
     with pytest.raises(ValueError, match="exact frozen Kappa"):
         build_experiment_report(
             manifest_hash="final",

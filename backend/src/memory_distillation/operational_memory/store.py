@@ -10,6 +10,7 @@ class InMemoryOperationalMemory:
         self._episodes: dict[str, ReviewedEpisode] = {}
 
     def append_episode(self, episode: ReviewedEpisode) -> None:
+        episode = ReviewedEpisode.model_validate(episode.model_dump(mode="json"))
         existing = self._episodes.get(episode.episode_id)
         if existing is not None and existing != episode:
             raise ValueError("episode id already stores different content")

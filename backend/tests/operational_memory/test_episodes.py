@@ -1,7 +1,11 @@
+import pytest
+from pydantic import ValidationError
+
 from memory_distillation.benchmark import Score, TaskInput
 from memory_distillation.operational_memory import (
     EpisodeProvenance,
     InMemoryOperationalMemory,
+    ReviewedEpisode,
     episode_from_run,
 )
 from memory_distillation.task_execution import (
@@ -139,3 +143,17 @@ def test_direct_answer_replacement_is_ineligible_for_consolidation() -> None:
         episode_from_run(task=task, run=run, provenance=provenance).eligible_for_consolidation
         is False
     )
+
+    episode = episode_from_run(task=task, run=run, provenance=provenance)
+    forged = {**episode.model_dump(), "eligible_for_consolidation": True}
+    with pytest.raises(ValidationError, match="eligibility"):
+        ReviewedEpisode.model_validate(forged)
+
+    forged_identity = {**episode.model_dump(), "episode_id": "episode:forged"}
+    with pytest.raises(ValidationError, match="identity"):
+        ReviewedEpisode.model_validate(forged_identity)
+
+    forged_copy = episode.model_copy(update={"eligible_for_consolidation": True})
+    memory = InMemoryOperationalMemory()
+    with pytest.raises(ValidationError, match="eligibility"):
+        memory.append_episode(forged_copy)

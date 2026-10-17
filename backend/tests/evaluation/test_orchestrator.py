@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import pytest
 
 from memory_distillation.benchmark import Score, TaskAsset, TaskInput
@@ -8,7 +11,7 @@ from memory_distillation.evaluation import (
     run_offline_conditions,
 )
 from memory_distillation.inference import DeterministicInference
-from memory_distillation.review_policy import KappaArtifact
+from memory_distillation.review_policy import KappaArtifact, KappaRule, RuleEvidence
 from memory_distillation.sandbox import DeterministicSandbox
 from memory_distillation.task_execution import (
     DeterministicReviewer,
@@ -27,9 +30,37 @@ class AnyAnswerVerifier:
 
 
 def _kappa() -> KappaArtifact:
-    return KappaArtifact.model_construct(
-        content_hash="a" * 64,
-        guidance=("Inspect relevant chart labels before computing.",),
+    rule = KappaRule(
+        rule_id="inspect-labels",
+        action_types=("inspect_image",),
+        instruction="Inspect relevant chart labels before computing.",
+    )
+    evidence = RuleEvidence(
+        rule_id=rule.rule_id,
+        discovery_task_ids=tuple(f"d-{index}" for index in range(8)),
+        regression_task_ids=tuple(f"r-{index}" for index in range(8)),
+        discovery_helped=1,
+        regression_helped=1,
+        regression_harmed=0,
+        action_compatible=True,
+    )
+    payload = {
+        "manifest_hash": "calibration-manifest",
+        "revision": 1,
+        "rules": [rule.model_dump(mode="json")],
+        "evidence": [evidence.model_dump(mode="json")],
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return KappaArtifact(
+        artifact_id=f"kappa:{digest[:16]}",
+        manifest_hash="calibration-manifest",
+        revision=1,
+        rules=(rule,),
+        guidance=(rule.instruction,),
+        evidence=(evidence,),
+        content_hash=digest,
     )
 
 

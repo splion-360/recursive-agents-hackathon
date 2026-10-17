@@ -139,6 +139,7 @@ class VersionRegistry:
         self._accepted_version_id = bootstrap.version_id
 
     def freeze_candidate(self, candidate: CandidateVersion) -> VersionView:
+        candidate = _validated_candidate(candidate)
         view = VersionView(
             version_id=candidate.version_id,
             cards=candidate.cards,
@@ -177,6 +178,7 @@ def decide_promotion(
 ) -> PromotionDecision:
     """Evaluate explicit gates and atomically advance the Accepted Version."""
 
+    candidate = _validated_candidate(candidate)
     accepted_before = registry.accepted_version_id
     if accepted_before != candidate.parent_version_id:
         raise ValueError("candidate parent is not the current Accepted Version")
@@ -265,8 +267,14 @@ def run_paired_promotion(
 ) -> tuple[PairedOutcome, ...]:
     """Run the complete frozen Promotion plan through one TaskExecutor seam."""
 
+    candidate = _validated_candidate(candidate)
     if execution_policy.review_required:
         raise ValueError("paired memory promotion must run without the online Reviewer")
+    if (
+        candidate.parent_version_id != plan.accepted_version_id
+        or candidate.parent_version_id != registry.accepted_version_id
+    ):
+        raise ValueError("candidate parent is not the current Accepted Version")
     accepted_view = registry.get_view(plan.accepted_version_id)
     candidate_view = VersionView(
         version_id=candidate.version_id,
@@ -339,3 +347,7 @@ def _relative_change(baseline: float, candidate: float) -> float:
     if baseline == 0:
         return 0 if candidate == 0 else float("inf")
     return (candidate - baseline) / baseline
+
+
+def _validated_candidate(candidate: CandidateVersion) -> CandidateVersion:
+    return CandidateVersion.model_validate(candidate.model_dump(mode="json"))

@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,11 +9,33 @@ from memory_distillation.review_policy import (
     CalibrationPrivacyContext,
     CalibrationSplit,
     HStarProposal,
+    KappaArtifact,
     KappaCalibrationSession,
     KappaRule,
+    RuleEvidence,
     freeze_kappa,
     hash_hstar_proposal,
 )
+
+
+def _rehash_artifact(
+    artifact: KappaArtifact, evidence: tuple[RuleEvidence, ...]
+) -> dict[str, object]:
+    payload = {
+        "manifest_hash": artifact.manifest_hash,
+        "revision": artifact.revision,
+        "rules": [item.model_dump(mode="json") for item in artifact.rules],
+        "evidence": [item.model_dump(mode="json") for item in evidence],
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return {
+        **artifact.model_dump(),
+        "artifact_id": f"kappa:{digest[:16]}",
+        "evidence": evidence,
+        "content_hash": digest,
+    }
 
 
 def _split() -> CalibrationSplit:
@@ -134,6 +159,75 @@ def test_kappa_is_deterministic_frozen_and_regression_screened() -> None:
     assert len(first.content_hash) == 64
     with pytest.raises(ValidationError):
         first.guidance = ()
+
+
+@pytest.mark.parametrize(
+    "evidence_update",
+    [
+        {"action_compatible": False},
+        {"discovery_helped": 0},
+        {"regression_helped": 0, "regression_harmed": 0},
+        {"discovery_task_ids": tuple(f"d{index}" for index in range(7))},
+    ],
+)
+def test_kappa_artifact_revalidates_accepted_rule_evidence(
+    evidence_update: dict[str, object],
+) -> None:
+    split = _split()
+    rule = KappaRule(
+        rule_id="verify",
+        action_types=("inspect_image",),
+        instruction="Verify chart labels.",
+    )
+    proposal = HStarProposal(
+        proposal_id="validated", rules=(rule,), discovery_task_ids=split.discovery_task_ids
+    )
+    artifact = freeze_kappa(
+        session=KappaCalibrationSession(split),
+        proposal=proposal,
+        executions=_executions_for_proposal(
+            split,
+            proposal,
+            rule,
+            discovery_helped=1,
+            regression_helped=1,
+            regression_harmed=0,
+        ),
+        privacy=CalibrationPrivacyContext(forbidden_phrases=("never matches",)),
+    )
+    evidence = (artifact.evidence[0].model_copy(update=evidence_update),)
+
+    with pytest.raises(ValidationError, match="evidence"):
+        KappaArtifact.model_validate(_rehash_artifact(artifact, evidence))
+
+
+def test_kappa_artifact_requires_one_evidence_record_per_accepted_rule() -> None:
+    split = _split()
+    rule = KappaRule(
+        rule_id="verify",
+        action_types=("inspect_image",),
+        instruction="Verify chart labels.",
+    )
+    proposal = HStarProposal(
+        proposal_id="validated", rules=(rule,), discovery_task_ids=split.discovery_task_ids
+    )
+    artifact = freeze_kappa(
+        session=KappaCalibrationSession(split),
+        proposal=proposal,
+        executions=_executions_for_proposal(
+            split,
+            proposal,
+            rule,
+            discovery_helped=1,
+            regression_helped=1,
+            regression_harmed=0,
+        ),
+        privacy=CalibrationPrivacyContext(forbidden_phrases=("never matches",)),
+    )
+    duplicated = (artifact.evidence[0], artifact.evidence[0])
+
+    with pytest.raises(ValidationError, match="unique"):
+        KappaArtifact.model_validate(_rehash_artifact(artifact, duplicated))
 
 
 def test_calibration_isolation_evidence_and_privacy_fail_closed() -> None:

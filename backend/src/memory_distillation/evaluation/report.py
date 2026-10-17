@@ -144,15 +144,13 @@ def frozen_condition_policies(
     """Declare the only allowed experimental differences."""
 
     unreviewed = ExecutionPolicy.model_validate(
-        execution.model_dump()
-        | {"review_required": False, "kappa_hash": None, "kappa_guidance": ()}
+        execution.model_dump() | {"review_required": False, "kappa": None}
     )
     reviewed = ExecutionPolicy.model_validate(
         execution.model_dump()
         | {
             "review_required": True,
-            "kappa_hash": kappa.content_hash,
-            "kappa_guidance": kappa.guidance,
+            "kappa": kappa.model_dump(mode="json"),
         }
     )
     return (
@@ -218,12 +216,9 @@ def validate_condition_policies(
         if policy.execution.review_required != policy.reviewer_enabled:
             raise ValueError("Reviewer flag and execution policy disagree")
         if policy.condition == "C1":
-            if (
-                policy.execution.kappa_hash != kappa.content_hash
-                or policy.execution.kappa_guidance != kappa.guidance
-            ):
+            if policy.execution.kappa != kappa:
                 raise ValueError("C1 must bind the exact frozen Kappa artifact")
-        elif policy.execution.kappa_hash is not None or policy.execution.kappa_guidance:
+        elif policy.execution.kappa is not None:
             raise ValueError("only C1 may receive Kappa guidance")
         if any(
             getattr(policy.execution, field) != getattr(baseline, field) for field in budget_fields

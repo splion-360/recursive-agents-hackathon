@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memory_distillation.benchmark import Score
+from memory_distillation.review_policy import KappaArtifact
 
 
 class InspectImageAction(BaseModel):
@@ -63,16 +64,25 @@ class ExecutionPolicy(BaseModel):
     max_crop_coordinate: int = Field(default=8_192, ge=1)
     review_required: bool = False
     max_review_calls: int = Field(default=8, ge=0)
-    kappa_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    kappa_guidance: tuple[str, ...] = ()
+    kappa: KappaArtifact | None = None
 
     @model_validator(mode="after")
     def require_consistent_reviewer_policy(self) -> "ExecutionPolicy":
-        if self.review_required and (self.kappa_hash is None or not self.kappa_guidance):
-            raise ValueError("reviewed execution requires frozen Kappa identity and guidance")
-        if not self.review_required and (self.kappa_hash is not None or self.kappa_guidance):
-            raise ValueError("Reviewer-free execution cannot receive Kappa guidance")
+        if self.review_required and self.kappa is None:
+            raise ValueError("reviewed execution requires a frozen Kappa artifact")
+        if not self.review_required and self.kappa is not None:
+            raise ValueError("Reviewer-free execution cannot receive a Kappa artifact")
+        if self.kappa is not None:
+            KappaArtifact.model_validate(self.kappa.model_dump(mode="json"))
         return self
+
+    @property
+    def kappa_hash(self) -> str | None:
+        return self.kappa.content_hash if self.kappa is not None else None
+
+    @property
+    def kappa_guidance(self) -> tuple[str, ...]:
+        return self.kappa.guidance if self.kappa is not None else ()
 
 
 class Observation(BaseModel):
