@@ -70,6 +70,7 @@ def test_c0_c3_report_is_paired_deterministic_and_complete() -> None:
     assert first.contrasts[1].capability_delta == 1
     assert first.contrasts[1].negative_transfer_rate == 0
     assert first.contrasts[1].mcnemar_exact_p == 0.5
+    assert first.reviewer_gap_recovery == 1
     assert {policy.condition: policy.reviewer_enabled for policy in policies} == {
         "C0": False,
         "C1": True,

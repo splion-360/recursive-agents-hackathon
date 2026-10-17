@@ -107,7 +107,7 @@ def run_offline_conditions(
                     latency_ms=run.elapsed_ms,
                     input_tokens=run.input_tokens,
                     output_tokens=run.output_tokens,
-                    model_calls=len(run.actions),
+                    model_calls=run.model_calls,
                     tool_calls=run.tool_calls,
                     review_calls=run.review_calls,
                     retrieved_card_count=len(context),

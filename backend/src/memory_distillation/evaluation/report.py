@@ -73,7 +73,6 @@ class PairedContrast(BaseModel):
     negative_transfer_rate: float
     condition_wins: int
     baseline_wins: int
-    reviewer_gap_recovery: float | None
     latency_effect_ms: float
     token_effect: float
     mcnemar_exact_p: float
@@ -121,6 +120,7 @@ class ExperimentReport(BaseModel):
     policies: tuple[ConditionPolicy, ...]
     metrics: tuple[ConditionMetrics, ...]
     contrasts: tuple[PairedContrast, ...]
+    reviewer_gap_recovery: float | None
     c3: C3Semantics
 
     @model_validator(mode="after")
@@ -274,12 +274,20 @@ def build_experiment_report(
         for condition in ("C1", "C2", "C3")
         if grouped[condition]
     )
+    accuracy_by_condition = {item.condition: item.accuracy for item in metrics}
+    reviewer_gap = accuracy_by_condition["C1"] - accuracy_by_condition["C0"]
+    reviewer_gap_recovery = (
+        (accuracy_by_condition["C2"] - accuracy_by_condition["C0"]) / reviewer_gap
+        if reviewer_gap != 0
+        else None
+    )
     return ExperimentReport(
         manifest_hash=manifest_hash,
         kappa_hash=kappa.content_hash,
         policies=policies,
         metrics=metrics,
         contrasts=contrasts,
+        reviewer_gap_recovery=reviewer_gap_recovery,
         c3=c3,
     )
 
@@ -324,7 +332,6 @@ def _contrast(
     condition_wins = sum(
         not baseline[(item.task_id, item.seed)].correct and item.correct for item in ordered
     )
-    baseline_incorrect = sum(not baseline[(item.task_id, item.seed)].correct for item in ordered)
     return PairedContrast(
         condition=condition,
         paired_sample_size=size,
@@ -334,11 +341,6 @@ def _contrast(
         negative_transfer_rate=baseline_wins / size,
         condition_wins=condition_wins,
         baseline_wins=baseline_wins,
-        reviewer_gap_recovery=(
-            condition_wins / baseline_incorrect
-            if condition == "C1" and baseline_incorrect
-            else None
-        ),
         latency_effect_ms=sum(
             item.latency_ms - baseline[(item.task_id, item.seed)].latency_ms for item in ordered
         )

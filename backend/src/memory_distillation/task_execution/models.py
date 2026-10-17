@@ -94,6 +94,17 @@ class RunStartedEvent(BaseModel):
     kappa_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
+class InferenceRequestedEvent(BaseModel):
+    """Provider-independent evidence that one Student model call was attempted."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["inference_requested"] = "inference_requested"
+    sequence: int
+    task_id: str
+    turn_index: int = Field(ge=0)
+
+
 class ActionProposedEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -165,6 +176,7 @@ class RunCompletedEvent(BaseModel):
 
 RunEvent = Annotated[
     RunStartedEvent
+    | InferenceRequestedEvent
     | ActionProposedEvent
     | ActionReviewedEvent
     | ObservationEvent
@@ -193,4 +205,5 @@ class TaskRun(BaseModel):
     tool_calls: int = Field(ge=0)
     python_calls: int = Field(ge=0)
     review_calls: int = Field(ge=0)
+    model_calls: int = Field(default=0, ge=0)
     kappa_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")

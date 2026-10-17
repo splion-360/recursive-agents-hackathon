@@ -12,6 +12,7 @@ from memory_distillation.task_execution.models import (
     CropAction,
     ExecutionPolicy,
     FinalAnswerAction,
+    InferenceRequestedEvent,
     InspectImageAction,
     Observation,
     ObservationEvent,
@@ -82,6 +83,13 @@ class TaskExecutor:
         )
 
         for turn_index in range(policy.max_actions):
+            emit(
+                InferenceRequestedEvent(
+                    sequence=len(events),
+                    task_id=task.task_id,
+                    turn_index=turn_index,
+                )
+            )
             try:
                 result = self._inference.generate(
                     InferenceRequest(
@@ -501,6 +509,7 @@ class TaskExecutor:
             tool_calls=tool_calls,
             python_calls=python_calls,
             review_calls=review_calls,
+            model_calls=sum(isinstance(item, InferenceRequestedEvent) for item in events),
             kappa_hash=(
                 events[0].kappa_hash if events and isinstance(events[0], RunStartedEvent) else None
             ),
