@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +23,7 @@ from memory_distillation.versioning.models import (
     CandidateVersion,
     CardOperation,
     ConsolidationBatch,
+    RetrievalCalibration,
     RetrievalPolicy,
     RetrievalTrial,
     VersionView,
@@ -53,6 +55,7 @@ class MeasuredTaskSource(Protocol):
 class OperationalMemory(PromotionRegistry, Protocol):
     def initialize(self) -> None: ...
     def append_episode(self, episode: ReviewedEpisode) -> None: ...
+    def snapshot_collection_episodes(self) -> tuple[ReviewedEpisode, ...]: ...
 
 
 class Consolidator(Protocol):
@@ -73,6 +76,7 @@ class LifecycleReport(BaseModel):
     schema_version: str = "measured-lifecycle.v1"
     run_id: str
     code_revision: str
+    resumed_code_revision: str | None = None
     configuration_hash: str
     collection_manifest_hash: str
     promotion_manifest_hash: str
@@ -99,6 +103,8 @@ def run_measured_lifecycle(
     kappa: KappaArtifact,
     seed: int = 17,
     thresholds: PromotionThresholds | None = None,
+    progress: Callable[[str], None] | None = None,
+    resume_collection: tuple[ReviewedEpisode, ...] | None = None,
 ) -> LifecycleReport:
     """Execute exactly one immutable Collection, consolidation, and Promotion pass."""
 
@@ -109,48 +115,75 @@ def run_measured_lifecycle(
     memory.initialize()
     accepted_id = memory.accepted_version_id
     accepted_view = memory.get_view(accepted_id)
-    configuration_hash = _hash_json(
-        {
-            "code_revision": code_revision,
-            "collection_manifest": collection_manifest.content_sha256,
-            "promotion_manifest": promotion_manifest.content_sha256,
-            "kappa_hash": kappa.content_hash,
-            "accepted_version_id": accepted_id,
-            "accepted_content_hash": accepted_view.content_hash,
-            "seed": seed,
-            "thresholds": (thresholds or PromotionThresholds()).model_dump(mode="json"),
-        }
-    )
     collection_tasks = source.load_collection()
     _require_task_membership(collection_tasks, collection_manifest)
-    provenance = EpisodeProvenance(
-        code_revision=code_revision,
-        manifest_hash=collection_manifest.content_sha256,
-        configuration_hash=configuration_hash,
-        lifecycle_pass_id=run_id,
-        purpose="collection",
-        manifest_task_ids=tuple(entry.task_id for entry in collection_manifest.entries),
-        accepted_version_id=accepted_id,
-        accepted_content_hash=accepted_view.content_hash,
-        kappa_hash=kappa.content_hash,
-    )
-    collection_policy = ExecutionPolicy(review_required=True, kappa=kappa)
-    episodes: list[ReviewedEpisode] = []
-    for index, task in enumerate(collection_tasks):
-        run = executor.run(
-            task=task,
-            asset=source.load_asset(task),
-            policy=collection_policy,
-            seed=seed + index,
-            behavior_cards=retrieve_behavior_cards(accepted_view, task),
+    effective_thresholds = thresholds or PromotionThresholds()
+    if resume_collection is None:
+        original_code_revision = code_revision
+        configuration_hash = _configuration_hash(
+            code_revision=original_code_revision,
+            collection_manifest=collection_manifest,
+            promotion_manifest=promotion_manifest,
+            kappa=kappa,
+            accepted_view=accepted_view,
+            seed=seed,
+            thresholds=effective_thresholds,
         )
-        episode = episode_from_run(task=task, run=run, provenance=provenance)
-        memory.append_episode(episode)
-        episodes.append(episode)
-    frozen_episodes = tuple(episodes)
+        provenance = EpisodeProvenance(
+            code_revision=original_code_revision,
+            manifest_hash=collection_manifest.content_sha256,
+            configuration_hash=configuration_hash,
+            lifecycle_pass_id=run_id,
+            purpose="collection",
+            manifest_task_ids=tuple(entry.task_id for entry in collection_manifest.entries),
+            accepted_version_id=accepted_id,
+            accepted_content_hash=accepted_view.content_hash,
+            kappa_hash=kappa.content_hash,
+        )
+        collection_policy = ExecutionPolicy(review_required=True, kappa=kappa)
+        episodes: list[ReviewedEpisode] = []
+        _report_progress(progress, "[1/4] Collection: reviewing 40 tasks with frozen Kappa.")
+        for index, task in enumerate(collection_tasks):
+            run = executor.run(
+                task=task,
+                asset=source.load_asset(task),
+                policy=collection_policy,
+                seed=seed + index,
+                behavior_cards=retrieve_behavior_cards(accepted_view, task),
+            )
+            episode = episode_from_run(task=task, run=run, provenance=provenance)
+            memory.append_episode(episode)
+            episodes.append(episode)
+        frozen_episodes = tuple(episodes)
+        resumed_code_revision = None
+    else:
+        frozen_episodes, original_code_revision, configuration_hash = (
+            _validate_resumed_collection(
+                episodes=resume_collection,
+                tasks=collection_tasks,
+                run_id=run_id,
+                collection_manifest=collection_manifest,
+                promotion_manifest=promotion_manifest,
+                kappa=kappa,
+                accepted_view=accepted_view,
+                seed=seed,
+                thresholds=effective_thresholds,
+            )
+        )
+        resumed_code_revision = code_revision
     eligible = tuple(item for item in frozen_episodes if item.eligible_for_consolidation)
     if not eligible:
         raise RuntimeError("Collection produced no eligible Reviewed Episodes")
+    collection_status = "resumed from MemMachine" if resume_collection is not None else "complete"
+    _report_progress(
+        progress,
+        f"[1/4] Collection {collection_status}: 40 verified episodes; "
+        f"{len(eligible)} eligible.",
+    )
+    _report_progress(
+        progress,
+        f"[2/4] Consolidation: distilling {len(eligible)} eligible episodes.",
+    )
     batch = consolidator.consolidate(
         episodes=eligible,
         parent_view=accepted_view,
@@ -171,6 +204,11 @@ def run_measured_lifecycle(
         parent_view=accepted_view,
     )
     memory.freeze_candidate(candidate)
+    _report_progress(
+        progress,
+        f"[2/4] Consolidation complete: {len(batch.operations)} operations; "
+        f"{len(candidate.cards)} Behavior Cards; candidate={candidate.version_id}.",
+    )
 
     promotion_tasks = source.load_promotion()
     _require_task_membership(promotion_tasks, promotion_manifest)
@@ -187,6 +225,10 @@ def run_measured_lifecycle(
         candidate_content_hash=candidate.content_hash,
         assignments=assignments,
     )
+    _report_progress(
+        progress,
+        "[3/4] Promotion: running 30 paired tasks (60 Student runs; Reviewer disabled).",
+    )
     paired = run_paired_promotion(
         executor=executor,
         plan=plan,
@@ -202,16 +244,23 @@ def run_measured_lifecycle(
         candidate=candidate,
         execution_policy=ExecutionPolicy(review_required=False),
     )
+    _report_progress(progress, "[3/4] Promotion complete: 30 paired outcomes recorded.")
+    _report_progress(progress, "[4/4] Decision: evaluating deterministic promotion gates.")
     decision = decide_promotion(
         registry=memory,
         candidate=candidate,
         plan=plan,
         outcomes=paired,
-        thresholds=thresholds or PromotionThresholds(),
+        thresholds=effective_thresholds,
+    )
+    _report_progress(
+        progress,
+        f"[4/4] Complete: {decision.decision}; accepted={decision.accepted_version_after}.",
     )
     return LifecycleReport(
         run_id=run_id,
-        code_revision=code_revision,
+        code_revision=original_code_revision,
+        resumed_code_revision=resumed_code_revision,
         configuration_hash=configuration_hash,
         collection_manifest_hash=collection_manifest.content_sha256,
         promotion_manifest_hash=promotion_manifest.content_sha256,
@@ -223,6 +272,85 @@ def run_measured_lifecycle(
         candidate=candidate,
         promotion_outcomes=paired,
         decision=decision,
+    )
+
+
+def _validate_resumed_collection(
+    *,
+    episodes: tuple[ReviewedEpisode, ...],
+    tasks: tuple[TaskInput, ...],
+    run_id: str,
+    collection_manifest: ExperimentManifest,
+    promotion_manifest: ExperimentManifest,
+    kappa: KappaArtifact,
+    accepted_view: VersionView,
+    seed: int,
+    thresholds: PromotionThresholds,
+) -> tuple[tuple[ReviewedEpisode, ...], str, str]:
+    """Fail closed unless episodes are one exact, complete Collection pass."""
+
+    if len(episodes) != len(collection_manifest.entries):
+        raise ValueError("resume requires exactly 40 Collection episodes")
+    by_task = {episode.task.task_id: episode for episode in episodes}
+    if len(by_task) != len(episodes):
+        raise ValueError("resume Collection contains duplicate task identifiers")
+    ordered = tuple(by_task.get(task.task_id) for task in tasks)
+    if any(episode is None for episode in ordered):
+        raise ValueError("resume Collection does not cover the frozen manifest")
+    frozen = tuple(episode for episode in ordered if episode is not None)
+    provenance = frozen[0].provenance
+    expected_task_ids = tuple(entry.task_id for entry in collection_manifest.entries)
+    expected_configuration_hash = _configuration_hash(
+        code_revision=provenance.code_revision,
+        collection_manifest=collection_manifest,
+        promotion_manifest=promotion_manifest,
+        kappa=kappa,
+        accepted_view=accepted_view,
+        seed=seed,
+        thresholds=thresholds,
+    )
+    for index, (episode, task) in enumerate(zip(frozen, tasks, strict=True)):
+        if episode.task != task:
+            raise ValueError("resume Collection task payload differs from the frozen dataset")
+        if episode.seed != seed + index:
+            raise ValueError("resume Collection seed schedule differs from the requested pass")
+        item = episode.provenance
+        if (
+            item != provenance
+            or item.lifecycle_pass_id != run_id
+            or item.purpose != "collection"
+            or item.manifest_hash != collection_manifest.content_sha256
+            or item.manifest_task_ids != expected_task_ids
+            or item.accepted_version_id != accepted_view.version_id
+            or item.accepted_content_hash != accepted_view.content_hash
+            or item.kappa_hash != kappa.content_hash
+            or item.configuration_hash != expected_configuration_hash
+        ):
+            raise ValueError("resume Collection provenance does not match the requested pass")
+    return frozen, provenance.code_revision, expected_configuration_hash
+
+
+def _configuration_hash(
+    *,
+    code_revision: str,
+    collection_manifest: ExperimentManifest,
+    promotion_manifest: ExperimentManifest,
+    kappa: KappaArtifact,
+    accepted_view: VersionView,
+    seed: int,
+    thresholds: PromotionThresholds,
+) -> str:
+    return _hash_json(
+        {
+            "code_revision": code_revision,
+            "collection_manifest": collection_manifest.content_sha256,
+            "promotion_manifest": promotion_manifest.content_sha256,
+            "kappa_hash": kappa.content_hash,
+            "accepted_version_id": accepted_view.version_id,
+            "accepted_content_hash": accepted_view.content_hash,
+            "seed": seed,
+            "thresholds": thresholds.model_dump(mode="json"),
+        }
     )
 
 
@@ -249,7 +377,7 @@ def _calibrate_candidate_retrieval(
     *,
     operations: tuple[CardOperation, ...],
     episodes: tuple[ReviewedEpisode, ...],
-):
+) -> RetrievalCalibration:
     cards = tuple(
         BehaviorCard(
             card_id=operation.card_id,
@@ -310,3 +438,8 @@ def _hash_json(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def _report_progress(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress is not None:
+        progress(message)

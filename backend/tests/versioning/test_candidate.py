@@ -28,6 +28,22 @@ def _question(index: int) -> str:
     return f"What chart label {index} should be checked?"
 
 
+@pytest.mark.parametrize("field", ("trigger", "instruction"))
+@pytest.mark.parametrize("value", ("", "   "))
+def test_create_operation_rejects_empty_behavior_text(field: str, value: str) -> None:
+    payload = {
+        "kind": "CREATE",
+        "card_id": "card:invalid",
+        "trigger": "inspect the chart",
+        "instruction": "verify the relevant marks",
+        "evidence_episode_ids": ("episode-1",),
+    }
+    payload[field] = value
+
+    with pytest.raises(ValueError, match=r"trigger|instruction"):
+        CardOperation.model_validate(payload)
+
+
 def _manifest() -> ExperimentManifest:
     entries = tuple(
         ManifestEntry(

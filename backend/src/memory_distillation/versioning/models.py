@@ -21,10 +21,24 @@ class CardOperation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["CREATE", "REINFORCE", "REFINE", "RETIRE"]
-    card_id: str
-    trigger: str | None = None
-    instruction: str | None = None
+    card_id: str = Field(min_length=1)
+    trigger: str | None = Field(default=None, min_length=1, max_length=300)
+    instruction: str | None = Field(default=None, min_length=1, max_length=800)
     evidence_episode_ids: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def require_kind_specific_payload(self) -> "CardOperation":
+        if self.kind in {"CREATE", "REFINE"}:
+            if (
+                self.trigger is None
+                or self.instruction is None
+                or not self.trigger.strip()
+                or not self.instruction.strip()
+            ):
+                raise ValueError(f"{self.kind} requires a non-empty trigger and instruction")
+        elif self.trigger is not None or self.instruction is not None:
+            raise ValueError(f"{self.kind} must not include a trigger or instruction")
+        return self
 
 
 @dataclass(frozen=True, slots=True)

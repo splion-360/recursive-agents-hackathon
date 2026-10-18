@@ -193,6 +193,16 @@ class MemMachineOperationalMemory:
     def get_episode(self, episode_id: str) -> ReviewedEpisode | None:
         return self._get_record("reviewed_episode", episode_id, ReviewedEpisode)
 
+    def snapshot_collection_episodes(self) -> tuple[ReviewedEpisode, ...]:
+        """Return every immutable Collection episode, including ineligible evidence."""
+
+        episodes = self._load_records("reviewed_episode", ReviewedEpisode)
+        return tuple(
+            episode
+            for episode in sorted(episodes, key=lambda item: item.episode_id)
+            if episode.provenance.purpose == "collection"
+        )
+
     def snapshot_eligible_episodes(self) -> tuple[ReviewedEpisode, ...]:
         episodes = self._load_records("reviewed_episode", ReviewedEpisode)
         return tuple(

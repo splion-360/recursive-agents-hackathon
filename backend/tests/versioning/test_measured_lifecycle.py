@@ -19,6 +19,7 @@ from memory_distillation.task_execution import (
 )
 from memory_distillation.telemetry import InMemoryEventSink
 from memory_distillation.versioning import CardOperation, VersionRegistry
+from memory_distillation.versioning.command import _select_resume_collection
 from memory_distillation.versioning.measured import (
     ConsolidationBatch,
     run_measured_lifecycle,
@@ -107,6 +108,7 @@ def test_one_measured_pass_collects_consolidates_and_decides_promotion() -> None
         )
     )
     memory = FixtureMemory()
+    progress: list[str] = []
     kappa = freeze_minimal_kappa(
         CalibrationSplit(
             manifest_hash="m" * 64,
@@ -130,6 +132,7 @@ def test_one_measured_pass_collects_consolidates_and_decides_promotion() -> None
         consolidator=FixtureConsolidator(),
         memory=memory,
         kappa=kappa,
+        progress=progress.append,
     )
 
     assert len(report.collection_episode_ids) == 40
@@ -137,6 +140,95 @@ def test_one_measured_pass_collects_consolidates_and_decides_promotion() -> None
     assert len(report.promotion_outcomes) == 30
     assert report.decision.decision == "REJECT"
     assert memory.accepted_version_id == "accepted-v000"
+    assert [message[:5] for message in progress] == [
+        "[1/4]",
+        "[1/4]",
+        "[2/4]",
+        "[2/4]",
+        "[3/4]",
+        "[3/4]",
+        "[4/4]",
+        "[4/4]",
+    ]
+
+
+def test_measured_pass_resumes_complete_collection_without_reviewer_calls() -> None:
+    collection = _manifest("collection", "train", 40)
+    promotion = _manifest("promotion", "val", 30)
+    action = FinalAnswerAction(answer="fixture")
+    source = FixtureSource(collection, promotion)
+    kappa = freeze_minimal_kappa(
+        CalibrationSplit(
+            manifest_hash="m" * 64,
+            discovery_task_ids=tuple(f"d-{index}" for index in range(12)),
+            regression_task_ids=tuple(f"r-{index}" for index in range(12)),
+        )
+    )
+    collected_memory = FixtureMemory()
+    run_measured_lifecycle(
+        run_id="resumable-pass",
+        code_revision="fixture-revision",
+        source=source,
+        collection_manifest=collection,
+        promotion_manifest=promotion,
+        executor=TaskExecutor(
+            inference=DeterministicInference(actions=(action,), model_id="fixture-student"),
+            reviewer=DeterministicReviewer(
+                results=tuple(
+                    ReviewResult(
+                        decision="pass",
+                        accepted_action=action,
+                        private_reason="fixture",
+                        model_id="fixture-reviewer",
+                        request_id=f"review-{index}",
+                        input_tokens=1,
+                        output_tokens=1,
+                        latency_ms=1,
+                    )
+                    for index in range(40)
+                )
+            ),
+            sandbox=DeterministicSandbox(results={}),
+            verifier=AlwaysCorrect(),
+            event_sink=InMemoryEventSink(),
+        ),
+        consolidator=FixtureConsolidator(),
+        memory=collected_memory,
+        kappa=kappa,
+    )
+    resumed_memory = FixtureMemory()
+    for episode in collected_memory.snapshot_collection_episodes():
+        resumed_memory.append_episode(episode)
+    selected_run_id, selected_episodes = _select_resume_collection(
+        episodes=resumed_memory.snapshot_collection_episodes(),
+        requested_run_id=None,
+        collection_manifest=collection,
+        kappa_hash=kappa.content_hash,
+    )
+
+    resumed = run_measured_lifecycle(
+        run_id=selected_run_id,
+        code_revision="post-failure-fix",
+        source=source,
+        collection_manifest=collection,
+        promotion_manifest=promotion,
+        executor=TaskExecutor(
+            inference=DeterministicInference(actions=(action,), model_id="fixture-student"),
+            reviewer=None,
+            sandbox=DeterministicSandbox(results={}),
+            verifier=AlwaysCorrect(),
+            event_sink=InMemoryEventSink(),
+        ),
+        consolidator=FixtureConsolidator(),
+        memory=resumed_memory,
+        kappa=kappa,
+        resume_collection=selected_episodes,
+    )
+
+    assert resumed.run_id == "resumable-pass"
+    assert resumed.resumed_code_revision == "post-failure-fix"
+    assert len(resumed.collection_episode_ids) == 40
+    assert len(resumed.promotion_outcomes) == 30
 
 
 def _manifest(name: str, split: str, size: int) -> ExperimentManifest:

@@ -57,14 +57,11 @@ class ExecutionPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     max_actions: int = Field(default=8, ge=1)
-    max_tool_calls: int = Field(default=8, ge=0)
-    max_python_calls: int = Field(default=2, ge=0)
     max_total_tokens: int = Field(default=100_000, ge=1)
     max_elapsed_ms: int = Field(default=120_000, ge=1)
     sandbox_timeout_ms: int = Field(default=10_000, ge=1)
     max_crop_coordinate: int = Field(default=8_192, ge=1)
     review_required: bool = False
-    max_review_calls: int = Field(default=8, ge=0)
     kappa: KappaArtifact | None = None
 
     @model_validator(mode="after")

@@ -178,6 +178,7 @@ def test_managed_records_round_trip_idempotently_across_pages() -> None:
         memory.append_episode(episode)
         memory.append_episode(episode)
         assert memory.get_episode(episode.episode_id) == episode
+        assert memory.snapshot_collection_episodes() == (episode,)
         assert memory.snapshot_eligible_episodes() == (episode,)
 
         candidate = _candidate(episode.episode_id)

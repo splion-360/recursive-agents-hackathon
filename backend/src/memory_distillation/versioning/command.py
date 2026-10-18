@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from memory_distillation.benchmark import DevelopmentBenchmark
+from memory_distillation.benchmark import DevelopmentBenchmark, ExperimentManifest
 from memory_distillation.benchmark.manifests import load_manifest
 from memory_distillation.calibration import CalibrationReport
 from memory_distillation.inference import (
@@ -20,6 +20,7 @@ from memory_distillation.inference import (
 )
 from memory_distillation.inference.crusoe import CrusoeModel, build_crusoe_client
 from memory_distillation.operational_memory import MemMachineOperationalMemory
+from memory_distillation.operational_memory.models import ReviewedEpisode
 from memory_distillation.review_policy import KappaArtifact
 from memory_distillation.sandbox import OpenShellSandbox
 from memory_distillation.settings import Settings, get_settings
@@ -37,16 +38,17 @@ _LIFECYCLE_DIR = _REPOSITORY_ROOT / ".artifacts" / "lifecycle" / "current"
 def run_live_lifecycle(
     settings: Settings,
     *,
-    run_id: str,
+    run_id: str | None,
     dataset_root: Path,
     manifest_dir: Path,
     calibration_dir: Path,
     seed: int,
     code_revision: str,
+    resume: bool = False,
 ) -> LifecycleReport:
     """Compose verified adapters and execute one measured lifecycle pass."""
 
-    _prepare_artifact_directory()
+    _prepare_artifact_directory(resume=resume)
     report, kappa = _load_calibration(calibration_dir)
     collection_manifest = load_manifest(manifest_dir / "collection.json")
     promotion_manifest = load_manifest(manifest_dir / "promotion.json")
@@ -67,6 +69,20 @@ def run_live_lifecycle(
             project_id=settings.memmachine_project_id,
         ) as memory,
     ):
+        memory.initialize()
+        resume_collection: tuple[ReviewedEpisode, ...] | None = None
+        if resume:
+            run_id, resume_collection = _select_resume_collection(
+                episodes=memory.snapshot_collection_episodes(),
+                requested_run_id=run_id,
+                collection_manifest=collection_manifest,
+                kappa_hash=kappa.content_hash,
+            )
+            print(
+                f"Resume verified: {run_id}; loading 40 Collection episodes from MemMachine."
+            )
+        elif run_id is None:
+            raise ValueError("a run_id is required for a new lifecycle pass")
         executor = TaskExecutor(
             inference=CrusoeStudentInference(
                 client=client,
@@ -100,6 +116,8 @@ def run_live_lifecycle(
             memory=memory,
             kappa=kappa,
             seed=seed,
+            progress=print,
+            resume_collection=resume_collection,
         )
         _write_json("report.json", lifecycle.model_dump(mode="json"))
         _write_json("candidate.json", lifecycle.candidate.model_dump(mode="json"))
@@ -122,6 +140,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--calibration-dir", type=Path, default=_DEFAULT_CALIBRATION_DIR)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--run-id", default=None)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="resume a complete Collection pass from verified MemMachine records",
+    )
     args = parser.parse_args(argv)
     settings = get_settings()
     calibration_report, kappa = _load_calibration(args.calibration_dir)
@@ -151,6 +174,8 @@ def main(argv: list[str] | None = None) -> None:
     source_identity = _source_identity()
     print(
         "Lifecycle preflight\n"
+        f"  Mode: {'resume after Collection' if args.resume else 'new pass'}"
+        f"{f'; run={args.run_id}' if args.run_id else ''}\n"
         f"  Calibration: {calibration_report.run_id}; Kappa={kappa.content_hash[:12]}\n"
         f"  Work: Collection={len(collection.entries)} ({collection.content_sha256[:12]}), "
         f"Promotion={len(promotion.entries)} paired ({promotion.content_sha256[:12]})\n"
@@ -165,12 +190,17 @@ def main(argv: list[str] | None = None) -> None:
         return
     lifecycle = run_live_lifecycle(
         settings,
-        run_id=args.run_id or datetime.now(UTC).strftime("lifecycle-%Y%m%dT%H%M%SZ"),
+        run_id=(
+            args.run_id
+            if args.resume
+            else args.run_id or datetime.now(UTC).strftime("lifecycle-%Y%m%dT%H%M%SZ")
+        ),
         dataset_root=args.dataset_root,
         manifest_dir=args.manifest_dir,
         calibration_dir=args.calibration_dir,
         seed=args.seed,
         code_revision=source_identity,
+        resume=args.resume,
     )
     print(
         json.dumps(
@@ -199,11 +229,59 @@ def _load_calibration(path: Path) -> tuple[CalibrationReport, KappaArtifact]:
     return report, kappa
 
 
-def _prepare_artifact_directory() -> None:
+def _prepare_artifact_directory(*, resume: bool = False) -> None:
     _LIFECYCLE_DIR.mkdir(parents=True, exist_ok=True)
     conflicts = tuple(_LIFECYCLE_DIR.iterdir())
-    if conflicts:
+    if conflicts and not resume:
         raise FileExistsError("lifecycle artifact directory is not empty; archive it first")
+    unexpected = tuple(path.name for path in conflicts if path.name != "events.jsonl")
+    if unexpected:
+        raise FileExistsError(
+            "resume requires an incomplete lifecycle directory containing only events.jsonl; "
+            f"found {', '.join(sorted(unexpected))}"
+        )
+
+
+def _select_resume_collection(
+    *,
+    episodes: tuple[ReviewedEpisode, ...],
+    requested_run_id: str | None,
+    collection_manifest: ExperimentManifest,
+    kappa_hash: str,
+) -> tuple[str, tuple[ReviewedEpisode, ...]]:
+    """Select one complete pass; full provenance is revalidated before inference."""
+
+    task_ids = tuple(entry.task_id for entry in collection_manifest.entries)
+    task_id_set = set(task_ids)
+    grouped: dict[str, list[ReviewedEpisode]] = {}
+    for episode in episodes:
+        provenance = episode.provenance
+        if (
+            provenance.purpose == "collection"
+            and provenance.manifest_hash == collection_manifest.content_sha256
+            and provenance.kappa_hash == kappa_hash
+        ):
+            grouped.setdefault(provenance.lifecycle_pass_id, []).append(episode)
+    candidates: dict[str, tuple[ReviewedEpisode, ...]] = {}
+    for candidate_run_id, records in grouped.items():
+        by_task = {record.task.task_id: record for record in records}
+        if len(records) == len(task_ids) and set(by_task) == task_id_set:
+            candidates[candidate_run_id] = tuple(by_task[task_id] for task_id in task_ids)
+    if requested_run_id is not None:
+        selected = candidates.get(requested_run_id)
+        if selected is None:
+            raise ValueError(
+                f"MemMachine has no complete compatible Collection pass for {requested_run_id}"
+            )
+        return requested_run_id, selected
+    if len(candidates) != 1:
+        ids = ", ".join(sorted(candidates)) or "none"
+        raise ValueError(
+            "resume requires exactly one complete compatible Collection pass; "
+            f"found {ids}. Use --run-id to disambiguate."
+        )
+    selected_run_id = next(iter(candidates))
+    return selected_run_id, candidates[selected_run_id]
 
 
 def _write_json(name: str, payload: object) -> None:

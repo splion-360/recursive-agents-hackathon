@@ -71,6 +71,17 @@ uv run memory-distillation lifecycle --confirm-paid-run
 
 The command runs exactly 40 Collection tasks, one consolidation, and 30 paired
 Promotion tasks. It writes ignored evidence under `.artifacts/lifecycle/current`.
+If the process fails after all 40 Collection episodes were persisted, resume at
+Consolidation without paying to regenerate them:
+
+```bash
+uv run memory-distillation lifecycle --resume --confirm-paid-run
+```
+
+Resume reads the immutable episodes from MemMachine and accepts them only when
+their run, manifest, Kappa, accepted parent, seed schedule, configuration, and
+task payloads form one complete pass. If several compatible passes exist, add
+`--run-id <lifecycle-id>`. Local JSONL telemetry is never used as memory.
 
 ## Project Structure
 

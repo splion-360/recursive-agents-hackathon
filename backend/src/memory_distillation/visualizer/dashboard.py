@@ -16,6 +16,8 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 CALIBRATION_ARTIFACT_DIR = _REPOSITORY_ROOT / ".artifacts" / "calibration" / "current"
 CALIBRATION_STATUS_PATH = CALIBRATION_ARTIFACT_DIR / "status.json"
 CALIBRATION_EVENTS_PATH = CALIBRATION_ARTIFACT_DIR / "events.jsonl"
+LIFECYCLE_ARTIFACT_DIR = _REPOSITORY_ROOT / ".artifacts" / "lifecycle" / "current"
+LIFECYCLE_EVENTS_PATH = LIFECYCLE_ARTIFACT_DIR / "events.jsonl"
 _MANIFEST_DIR = _REPOSITORY_ROOT / "backend" / "experiment_manifests"
 _DATASET_ROOT = _REPOSITORY_ROOT / ".local" / "chartqa-source" / "ChartQA Dataset"
 _RUN_EVENT_ADAPTER = TypeAdapter(RunEvent)
@@ -114,6 +116,55 @@ class HarnessDefinition(BaseModel):
     revisions: tuple[str, ...] = ()
 
 
+class BehaviorCardSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    card_id: str
+    trigger: str
+    instruction: str
+    evidence_episode_ids: tuple[str, ...]
+
+
+class PromotionPairSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str
+    accepted_correct: bool
+    candidate_correct: bool
+    accepted_latency_ms: int
+    candidate_latency_ms: int
+    accepted_input_tokens: int
+    candidate_input_tokens: int
+
+
+class LifecycleDashboard(BaseModel):
+    """Sanitized live projection of the Collection-to-Promotion pass."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    state: Literal["idle", "running", "complete"]
+    stage: Literal["waiting", "collection", "consolidation", "promotion", "complete"]
+    run_id: str | None = None
+    collection_completed: int = Field(ge=0, le=40)
+    collection_total: Literal[40] = 40
+    promotion_runs_completed: int = Field(ge=0, le=60)
+    promotion_runs_total: Literal[60] = 60
+    reviewed_episode_count: int = Field(ge=0)
+    eligible_episode_count: int = Field(ge=0)
+    parent_version_id: str = "accepted-v000"
+    candidate_version_id: str | None = None
+    accepted_version_id: str = "accepted-v000"
+    cards: tuple[BehaviorCardSummary, ...] = ()
+    decision: Literal["PROMOTE", "REJECT"] | None = None
+    failed_gates: tuple[str, ...] = ()
+    capability_delta: float | None = None
+    negative_transfer_rate: float | None = None
+    latency_regression: float | None = None
+    token_regression: float | None = None
+    promotion_pairs: tuple[PromotionPairSummary, ...] = ()
+    run_events: tuple[RunEvent, ...] = ()
+
+
 class DashboardSnapshot(BaseModel):
     """Single truthful snapshot used to hydrate the experiment dashboard."""
 
@@ -121,9 +172,9 @@ class DashboardSnapshot(BaseModel):
 
     mode: Literal["LIVE"] = "LIVE"
     generated_at: datetime
-    accepted_version: Literal["accepted-v000"] = "accepted-v000"
-    accepted_card_count: Literal[0] = 0
-    measured_results_available: Literal[False] = False
+    accepted_version: str = "accepted-v000"
+    accepted_card_count: int = Field(default=0, ge=0)
+    measured_results_available: bool = False
     calibration: CalibrationStatus
     manifests: tuple[ManifestSummary, ...]
     integrations: tuple[IntegrationStatus, ...]
@@ -133,6 +184,7 @@ class DashboardSnapshot(BaseModel):
     harnesses: tuple[HarnessDefinition, ...]
     calibration_tasks: tuple[CalibrationTaskSummary, ...]
     run_events: tuple[RunEvent, ...]
+    lifecycle: LifecycleDashboard
 
 
 class CalibrationTaskDetail(BaseModel):
@@ -160,8 +212,14 @@ def load_dashboard_snapshot(settings: Settings) -> DashboardSnapshot:
         )
     )
     totals = {manifest.name: manifest.task_count for manifest in manifests}
+    lifecycle = _load_lifecycle_dashboard()
     return DashboardSnapshot(
         generated_at=datetime.now(UTC),
+        accepted_version=lifecycle.accepted_version_id,
+        accepted_card_count=(
+            len(lifecycle.cards) if lifecycle.decision == "PROMOTE" else 0
+        ),
+        measured_results_available=lifecycle.state == "complete",
         calibration=_load_calibration_status(),
         manifests=manifests,
         integrations=_integration_statuses(settings),
@@ -182,6 +240,7 @@ def load_dashboard_snapshot(settings: Settings) -> DashboardSnapshot:
             for task_id, phase in task_phases.items()
         ),
         run_events=events,
+        lifecycle=lifecycle,
     )
 
 
@@ -233,6 +292,36 @@ def load_calibration_task(task_id: str) -> TaskInput:
         raise KeyError(f"unknown calibration task: {task_id}") from error
 
 
+def load_development_task(task_id: str) -> TaskInput:
+    """Load answer-free context for any non-final development task."""
+
+    _, tasks = _development_source()
+    try:
+        return tasks[task_id]
+    except KeyError as error:
+        raise KeyError(f"unknown development task: {task_id}") from error
+
+
+def load_development_task_asset(task_id: str) -> TaskAsset:
+    """Load a chart only when it belongs to an approved development manifest."""
+
+    benchmark, _ = _development_source()
+    return benchmark.load_asset(load_development_task(task_id))
+
+
+@lru_cache(maxsize=1)
+def _development_source() -> tuple[DevelopmentBenchmark, dict[str, TaskInput]]:
+    benchmark = DevelopmentBenchmark(dataset_root=_DATASET_ROOT, manifest_dir=_MANIFEST_DIR)
+    calibration = benchmark.load_calibration()
+    tasks = (
+        *calibration.discovery,
+        *calibration.regression,
+        *benchmark.load_collection(),
+        *benchmark.load_promotion(),
+    )
+    return benchmark, {task.task_id: task for task in tasks}
+
+
 @lru_cache(maxsize=1)
 def _calibration_source() -> tuple[
     DevelopmentBenchmark,
@@ -253,6 +342,68 @@ def _load_calibration_status() -> CalibrationStatus:
     if not CALIBRATION_STATUS_PATH.exists():
         return CalibrationStatus()
     return CalibrationStatus.model_validate_json(CALIBRATION_STATUS_PATH.read_text())
+
+
+def _load_lifecycle_dashboard() -> LifecycleDashboard:
+    events = read_run_events(LIFECYCLE_EVENTS_PATH)
+    completed_runs = sum(event.type == "run_completed" for event in events)
+    collection_completed = min(completed_runs, 40)
+    promotion_runs_completed = max(0, completed_runs - 40)
+    report_path = LIFECYCLE_ARTIFACT_DIR / "report.json"
+    if report_path.exists():
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+        candidate = payload["candidate"]
+        decision = payload["decision"]
+        metrics = decision["metrics"]
+        return LifecycleDashboard(
+            state="complete",
+            stage="complete",
+            run_id=str(payload["run_id"]),
+            collection_completed=40,
+            promotion_runs_completed=60,
+            reviewed_episode_count=len(payload["collection_episode_ids"]),
+            eligible_episode_count=len(payload["eligible_episode_ids"]),
+            parent_version_id=str(candidate["parent_version_id"]),
+            candidate_version_id=str(candidate["version_id"]),
+            accepted_version_id=str(decision["accepted_version_after"]),
+            cards=tuple(BehaviorCardSummary.model_validate(card) for card in candidate["cards"]),
+            decision=decision["decision"],
+            failed_gates=tuple(decision["failed_gates"]),
+            capability_delta=float(metrics["capability_delta"]),
+            negative_transfer_rate=float(metrics["negative_transfer_rate"]),
+            latency_regression=float(metrics["latency_regression"]),
+            token_regression=float(metrics["token_regression"]),
+            promotion_pairs=tuple(
+                PromotionPairSummary.model_validate(item)
+                for item in payload["promotion_outcomes"]
+            ),
+            run_events=events,
+        )
+    if not events:
+        return LifecycleDashboard(
+            state="idle",
+            stage="waiting",
+            collection_completed=0,
+            promotion_runs_completed=0,
+            reviewed_episode_count=0,
+            eligible_episode_count=0,
+        )
+    stage: Literal["collection", "consolidation", "promotion"]
+    if completed_runs < 40:
+        stage = "collection"
+    elif completed_runs == 40:
+        stage = "consolidation"
+    else:
+        stage = "promotion"
+    return LifecycleDashboard(
+        state="running",
+        stage=stage,
+        collection_completed=collection_completed,
+        promotion_runs_completed=promotion_runs_completed,
+        reviewed_episode_count=collection_completed,
+        eligible_episode_count=0,
+        run_events=events,
+    )
 
 
 def _load_manifest(name: str) -> ManifestSummary:

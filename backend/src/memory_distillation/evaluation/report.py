@@ -202,8 +202,6 @@ def validate_condition_policies(
         raise ValueError("all conditions must use one frozen configuration")
     budget_fields = (
         "max_actions",
-        "max_tool_calls",
-        "max_python_calls",
         "max_total_tokens",
         "max_elapsed_ms",
         "sandbox_timeout_ms",

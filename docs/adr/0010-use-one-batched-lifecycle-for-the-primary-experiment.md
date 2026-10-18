@@ -1,3 +1,11 @@
 # Use one batched lifecycle pass for the primary experiment
 
 The primary Version N to N+1 attempt will collect the complete 40-item Collection Set against one immutable Accepted Version, freeze the eligible Reviewed Episode snapshot, apply CREATE, REINFORCE, REFINE, and RETIRE as proposed deltas, screen and freeze one complete Candidate Version, and compare that candidate with the Accepted Version on all 30 Promotion Set tasks. No proposed card becomes retrievable during Collection, and only the accepted-version pointer may advance after the deterministic gate. The Final Held-Out Set is opened once after the lifecycle pass and evaluated under C0 through C3 with memory writes disabled. C3 uses a predeclared donor pool and frozen assignment seed, matches C2 card count exactly and token count within 10%, and is reported unavailable for tasks without an honest irrelevant match. If Accepted v000 remains the empty version, C2 collapses to the no-memory behavior and C3 is unavailable; that is a valid negative result, not evidence that relevance helped.
+
+A process failure after the complete Collection snapshot is persisted does not
+create a second experimental pass. Recovery may resume at consolidation only
+from one complete MemMachine snapshot after validating its run identity,
+manifest membership and hash, Kappa, accepted parent, configuration, seed
+schedule, and task payloads. The original Collection code revision remains the
+experiment identity; the recovery revision is recorded separately. Local JSONL
+telemetry cannot authorize or supply recovery state.

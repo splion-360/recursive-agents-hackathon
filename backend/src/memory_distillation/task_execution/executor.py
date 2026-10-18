@@ -213,23 +213,6 @@ class TaskExecutor:
 
             action = proposed_action
             if review_required:
-                if review_calls >= policy.max_review_calls:
-                    return self._finish(
-                        "reviewer_budget_exhausted",
-                        task,
-                        seed,
-                        actions,
-                        observations,
-                        events,
-                        input_tokens,
-                        output_tokens,
-                        elapsed_ms,
-                        tool_calls,
-                        python_calls,
-                        None,
-                        reviews,
-                        review_calls,
-                    )
                 if self._reviewer is None:
                     return self._finish(
                         "reviewer_failed",
@@ -374,21 +357,6 @@ class TaskExecutor:
                     score,
                 )
 
-            if tool_calls >= policy.max_tool_calls:
-                return self._finish(
-                    "tool_budget_exhausted",
-                    task,
-                    seed,
-                    actions,
-                    observations,
-                    events,
-                    input_tokens,
-                    output_tokens,
-                    elapsed_ms,
-                    tool_calls,
-                    python_calls,
-                    None,
-                )
             tool_calls += 1
 
             if isinstance(action, InspectImageAction):
@@ -417,21 +385,6 @@ class TaskExecutor:
                     content=f"crop=({action.x0},{action.y0},{action.x1},{action.y1})",
                 )
             else:
-                if python_calls >= policy.max_python_calls:
-                    return self._finish(
-                        "python_budget_exhausted",
-                        task,
-                        seed,
-                        actions,
-                        observations,
-                        events,
-                        input_tokens,
-                        output_tokens,
-                        elapsed_ms,
-                        tool_calls,
-                        python_calls,
-                        None,
-                    )
                 python_calls += 1
                 try:
                     sandbox_result = self._sandbox.execute(

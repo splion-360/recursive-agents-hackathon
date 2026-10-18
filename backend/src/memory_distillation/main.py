@@ -25,9 +25,12 @@ from memory_distillation.visualizer import (
     synthetic_evidence,
 )
 from memory_distillation.visualizer.dashboard import (
+    LIFECYCLE_EVENTS_PATH,
     CalibrationTaskDetail,
     load_calibration_task,
     load_calibration_task_asset,
+    load_development_task,
+    load_development_task_asset,
 )
 
 
@@ -107,6 +110,34 @@ def dashboard_task(task_id: str) -> CalibrationTaskDetail:
     return CalibrationTaskDetail(task_id=task.task_id, question=task.question)
 
 
+@app.get("/api/dashboard/lifecycle/tasks/{task_id}/image", response_class=Response)
+def dashboard_lifecycle_task_image(task_id: str) -> Response:
+    """Serve a Collection or Promotion chart without exposing its answer label."""
+
+    try:
+        asset = load_development_task_asset(task_id)
+    except (KeyError, FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail="Lifecycle chart not found") from error
+    return Response(
+        content=asset.content,
+        media_type=asset.media_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@app.get(
+    "/api/dashboard/lifecycle/tasks/{task_id}", response_model=CalibrationTaskDetail
+)
+def dashboard_lifecycle_task(task_id: str) -> CalibrationTaskDetail:
+    """Return answer-free context for a Collection or Promotion task."""
+
+    try:
+        task = load_development_task(task_id)
+    except (KeyError, FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=404, detail="Lifecycle task not found") from error
+    return CalibrationTaskDetail(task_id=task.task_id, question=task.question)
+
+
 @app.get("/api/dashboard/events")
 async def dashboard_events() -> StreamingResponse:
     """Stream validated public RunEvents appended by the shell-driven runner."""
@@ -126,6 +157,33 @@ async def dashboard_events() -> StreamingResponse:
                         event = parse_run_event(json.loads(line))
                         payload = event.model_dump(mode="json")
                         encoded = json.dumps(payload, separators=(",", ":"))
+                        yield f"event: run_event\ndata: {encoded}\n\n"
+            yield ": heartbeat\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.get("/api/dashboard/lifecycle/events")
+async def dashboard_lifecycle_events() -> StreamingResponse:
+    """Stream validated task events from the measured lifecycle run."""
+
+    async def stream() -> AsyncIterator[str]:
+        offset = 0
+        while True:
+            if LIFECYCLE_EVENTS_PATH.exists():
+                with LIFECYCLE_EVENTS_PATH.open(encoding="utf-8") as source:
+                    source.seek(offset)
+                    while line := source.readline():
+                        if not line.endswith("\n"):
+                            break
+                        offset = source.tell()
+                        if not line.strip():
+                            continue
+                        event = parse_run_event(json.loads(line))
+                        encoded = json.dumps(
+                            event.model_dump(mode="json"), separators=(",", ":")
+                        )
                         yield f"event: run_event\ndata: {encoded}\n\n"
             yield ": heartbeat\n\n"
             await asyncio.sleep(0.5)

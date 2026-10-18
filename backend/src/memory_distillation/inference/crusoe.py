@@ -159,9 +159,55 @@ class CrusoeStructuredResult[OutputT]:
 
 
 class _StudentOutput(BaseModel):
+    """Provider-friendly flat action shape converted to the domain union."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    action: StudentAction
+    action_type: Literal["inspect_image", "crop", "run_python", "final_answer"]
+    answer: str | None = Field(default=None, min_length=1, max_length=2_000)
+    code: str | None = Field(default=None, min_length=1, max_length=10_000)
+    x0: int | None = Field(default=None, ge=0)
+    y0: int | None = Field(default=None, ge=0)
+    x1: int | None = Field(default=None, gt=0)
+    y1: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_action_payload(self) -> _StudentOutput:
+        required_fields = {
+            "inspect_image": frozenset(),
+            "crop": frozenset({"x0", "y0", "x1", "y1"}),
+            "run_python": frozenset({"code"}),
+            "final_answer": frozenset({"answer"}),
+        }[self.action_type]
+        payload = {
+            "answer": self.answer,
+            "code": self.code,
+            "x0": self.x0,
+            "y0": self.y0,
+            "x1": self.x1,
+            "y1": self.y1,
+        }
+        supplied_fields = {name for name, value in payload.items() if value is not None}
+        if supplied_fields != required_fields:
+            raise ValueError(
+                f"{self.action_type} requires exactly {sorted(required_fields)} payload fields"
+            )
+        return self
+
+    def to_action(self) -> StudentAction:
+        if self.action_type == "inspect_image":
+            return InspectImageAction()
+        if self.action_type == "run_python":
+            assert self.code is not None
+            return RunPythonAction(code=self.code)
+        if self.action_type == "final_answer":
+            assert self.answer is not None
+            return FinalAnswerAction(answer=self.answer)
+        assert self.x0 is not None
+        assert self.y0 is not None
+        assert self.x1 is not None
+        assert self.y1 is not None
+        return CropAction(x0=self.x0, y0=self.y0, x1=self.x1, y1=self.y1)
 
 
 class _ReviewOutput(BaseModel):
@@ -229,6 +275,15 @@ class _CardOperationOutput(BaseModel):
     trigger: str | None = None
     instruction: str | None = None
     evidence_episode_ids: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_domain_operation(self) -> _CardOperationOutput:
+        """Reject unusable card operations while provider retries remain available."""
+
+        from memory_distillation.versioning.models import CardOperation
+
+        CardOperation.model_validate(self.model_dump(mode="json"))
+        return self
 
 
 class _ConsolidationOutput(BaseModel):
@@ -462,7 +517,11 @@ class CrusoeClient:
         if max_output_tokens <= 0:
             raise CrusoeAdmissionError("output token limit must be positive")
         serialized_bytes = len(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
-        estimated_tokens = serialized_bytes + max_output_tokens
+        # Serialized request bytes are not tokens. Treating base64 image bytes as
+        # one token each falsely rejects ordinary ChartQA images before Crusoe
+        # can apply its multimodal tokenizer and authoritative context check.
+        estimated_input_tokens = max(1, serialized_bytes // 4)
+        estimated_tokens = estimated_input_tokens + max_output_tokens
         if estimated_tokens > model.context_length:
             raise CrusoeAdmissionError("request exceeds the model context limit")
         if self._spent_tokens + estimated_tokens > self._budget.max_total_tokens:
@@ -470,7 +529,7 @@ class CrusoeClient:
         if self._budget.max_cost_usd is not None:
             estimated_cost = self._cost(
                 model,
-                input_tokens=serialized_bytes,
+                input_tokens=estimated_input_tokens,
                 output_tokens=max_output_tokens,
             )
             if self._spent_cost + estimated_cost > self._budget.max_cost_usd:
@@ -601,7 +660,11 @@ class CrusoeStudentInference:
                     "role": "system",
                     "content": (
                         "Act through exactly one allowed ChartQA action. Return only the "
-                        "structured action. Never invent observations or hidden references."
+                        "requested flat structured JSON. Set action_type and populate only "
+                        "the fields required by that action: answer for final_answer, code "
+                        "for run_python, x0/y0/x1/y1 for crop, or none for inspect_image. "
+                        "Set every unused payload field to null. Never invent observations "
+                        "or hidden references."
                     ),
                 },
                 {
@@ -620,7 +683,7 @@ class CrusoeStudentInference:
             seed=request.seed,
         )
         return InferenceResult(
-            output=result.output.action,
+            output=result.output.to_action(),
             model_id=result.model_id,
             request_id=result.request_id,
             input_tokens=result.input_tokens,
@@ -827,8 +890,10 @@ class CrusoeConsolidator:
                         "Distill the supplied reviewed ChartQA episode summaries into one to "
                         "eight general procedural Behavior Card operations. For an empty parent, "
                         "use CREATE only. Every episode_id must appear in at least one operation's "
-                        "evidence_episode_ids. Triggers and instructions must be answer-free and "
-                        "must not copy task IDs, questions, chart labels, numbers, or answers."
+                        "evidence_episode_ids. CREATE and REFINE require non-empty trigger and "
+                        "instruction fields. REINFORCE and RETIRE must omit those fields. Triggers "
+                        "and instructions must be answer-free and must not copy task IDs, "
+                        "questions, chart labels, numbers, or answers."
                     ),
                 },
                 {

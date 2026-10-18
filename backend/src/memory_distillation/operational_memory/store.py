@@ -19,6 +19,15 @@ class InMemoryOperationalMemory:
     def get_episode(self, episode_id: str) -> ReviewedEpisode | None:
         return self._episodes.get(episode_id)
 
+    def snapshot_collection_episodes(self) -> tuple[ReviewedEpisode, ...]:
+        """Return every immutable Collection episode, including ineligible evidence."""
+
+        return tuple(
+            episode
+            for _, episode in sorted(self._episodes.items())
+            if episode.provenance.purpose == "collection"
+        )
+
     def snapshot_eligible_episodes(self) -> tuple[ReviewedEpisode, ...]:
         return tuple(
             episode

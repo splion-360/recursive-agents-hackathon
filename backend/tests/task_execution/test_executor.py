@@ -121,12 +121,6 @@ def test_offline_baseline_trajectory_is_complete_and_reproducible() -> None:
     ("actions", "policy", "expected"),
     [
         ((InspectImageAction(),), ExecutionPolicy(max_actions=1), "action_budget_exhausted"),
-        ((InspectImageAction(),), ExecutionPolicy(max_tool_calls=0), "tool_budget_exhausted"),
-        (
-            (RunPythonAction(code="print(1)"),),
-            ExecutionPolicy(max_python_calls=0),
-            "python_budget_exhausted",
-        ),
         ((InspectImageAction(),), ExecutionPolicy(max_total_tokens=1), "token_budget_exhausted"),
         ((InspectImageAction(),), ExecutionPolicy(max_elapsed_ms=1), "time_budget_exhausted"),
     ],
@@ -136,7 +130,7 @@ def test_execution_budgets_fail_closed(
     policy: ExecutionPolicy,
     expected: str,
 ) -> None:
-    """Every Minimal Harness budget stops the run with explicit evidence."""
+    """Every retained Minimal Harness boundary stops the run with explicit evidence."""
 
     task, asset = _fixture_input()
     run = TaskExecutor(
@@ -252,16 +246,14 @@ def test_reviewer_passes_or_replaces_before_execution_without_leaking_reason() -
 
 
 @pytest.mark.parametrize(
-    ("reviewer", "max_review_calls", "expected"),
+    ("reviewer", "expected"),
     [
-        (None, 1, "reviewer_failed"),
-        (DeterministicReviewer(results=()), 1, "reviewer_failed"),
-        (DeterministicReviewer(results=()), 0, "reviewer_budget_exhausted"),
+        (None, "reviewer_failed"),
+        (DeterministicReviewer(results=()), "reviewer_failed"),
     ],
 )
-def test_reviewer_failure_and_budget_exhaustion_fail_closed(
+def test_reviewer_failure_fails_closed(
     reviewer: DeterministicReviewer | None,
-    max_review_calls: int,
     expected: str,
 ) -> None:
     task, asset = _fixture_input()
@@ -280,7 +272,6 @@ def test_reviewer_failure_and_budget_exhaustion_fail_closed(
         asset=asset,
         policy=ExecutionPolicy(
             review_required=True,
-            max_review_calls=max_review_calls,
             kappa=_kappa("Review every action."),
         ),
         seed=17,

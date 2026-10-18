@@ -157,6 +157,48 @@ def test_cost_admission_rejects_before_inference_submission() -> None:
     assert paths == ["/v1/models"]
 
 
+def test_multimodal_payload_bytes_are_not_counted_as_tokens() -> None:
+    submitted = False
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal submitted
+        if request.url.path.endswith("/models"):
+            response = _catalog_response()
+            payload = response.json()
+            payload["data"][0]["context_length"] = 262_144
+            return httpx2.Response(200, json=payload)
+        submitted = True
+        return _completion_response()
+
+    large_image = "A" * 256_296
+    with CrusoeClient(
+        base_url="https://inference.example.test/v1",
+        api_key=SecretStr("fixture-secret"),
+        budget=CrusoeBudget(max_total_tokens=10_000_000),
+        transport=httpx2.MockTransport(handler),
+    ) as client:
+        client.complete_json(
+            model_id="fixture/model",
+            messages=(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Read the chart."},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{large_image}"},
+                        },
+                    ],
+                },
+            ),
+            output_type=FixtureOutput,
+            max_output_tokens=16_384,
+            seed=17,
+        )
+
+    assert submitted is True
+
+
 def test_retryable_provider_rejection_is_bounded_and_observable() -> None:
     attempts = 0
 
@@ -428,7 +470,10 @@ def test_student_serializes_one_image_and_returns_a_typed_action() -> None:
             return _catalog_response(model_id="fixture/student-vl", modality="multimodal")
         submitted.update(json.loads(request.content))
         return _completion_response(
-            content='{"action":{"type":"final_answer","answer":"42"}}',
+            content=(
+                '{"action_type":"final_answer","answer":"42","code":null,'
+                '"x0":null,"y0":null,"x1":null,"y1":null}'
+            ),
             model_id="fixture/student-vl",
         )
 
