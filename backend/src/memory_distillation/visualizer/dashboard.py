@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from memory_distillation.benchmark import DevelopmentBenchmark, TaskAsset, TaskInput
 from memory_distillation.settings import Settings
 from memory_distillation.task_execution.models import RunEvent
+from memory_distillation.versioning.promotion import PairedOutcome
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 CALIBRATION_ARTIFACT_DIR = _REPOSITORY_ROOT / ".artifacts" / "calibration" / "current"
@@ -135,6 +136,21 @@ class PromotionPairSummary(BaseModel):
     candidate_latency_ms: int
     accepted_input_tokens: int
     candidate_input_tokens: int
+
+
+def _promotion_pair_summary(value: object) -> PromotionPairSummary:
+    """Validate full promotion evidence, then expose only dashboard-safe fields."""
+
+    outcome = PairedOutcome.model_validate(value)
+    return PromotionPairSummary(
+        task_id=outcome.task_id,
+        accepted_correct=outcome.accepted_correct,
+        candidate_correct=outcome.candidate_correct,
+        accepted_latency_ms=outcome.accepted_latency_ms,
+        candidate_latency_ms=outcome.candidate_latency_ms,
+        accepted_input_tokens=outcome.accepted_input_tokens,
+        candidate_input_tokens=outcome.candidate_input_tokens,
+    )
 
 
 class LifecycleDashboard(BaseModel):
@@ -374,8 +390,7 @@ def _load_lifecycle_dashboard() -> LifecycleDashboard:
             latency_regression=float(metrics["latency_regression"]),
             token_regression=float(metrics["token_regression"]),
             promotion_pairs=tuple(
-                PromotionPairSummary.model_validate(item)
-                for item in payload["promotion_outcomes"]
+                _promotion_pair_summary(item) for item in payload["promotion_outcomes"]
             ),
             run_events=events,
         )

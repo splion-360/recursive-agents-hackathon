@@ -18,7 +18,12 @@ from memory_distillation.visualizer.dashboard import (
 )
 
 
-def test_dashboard_starts_truthfully_without_measured_results() -> None:
+def test_dashboard_starts_truthfully_without_measured_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(dashboard_module, "LIFECYCLE_ARTIFACT_DIR", tmp_path)
+    monkeypatch.setattr(dashboard_module, "LIFECYCLE_EVENTS_PATH", tmp_path / "events.jsonl")
+
     payload = TestClient(app).get("/api/dashboard").json()
 
     assert payload["mode"] == "LIVE"
@@ -81,6 +86,66 @@ def test_live_trace_accepts_only_complete_typed_run_events(tmp_path: Path) -> No
     path.write_text(event.model_dump_json(), encoding="utf-8")
     with pytest.raises(ValueError, match="truncated"):
         read_run_events(path)
+
+
+def test_lifecycle_dashboard_projects_full_promotion_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = {
+        "run_id": "lifecycle-fixture",
+        "collection_episode_ids": [f"episode-{index}" for index in range(40)],
+        "eligible_episode_ids": [f"episode-{index}" for index in range(39)],
+        "candidate": {
+            "parent_version_id": "accepted-v000",
+            "version_id": "candidate:fixture",
+            "cards": [],
+        },
+        "decision": {
+            "accepted_version_after": "accepted-v000",
+            "decision": "REJECT",
+            "failed_gates": ["negative_transfer"],
+            "metrics": {
+                "capability_delta": 0.066,
+                "negative_transfer_rate": 0.066,
+                "latency_regression": -0.15,
+                "token_regression": 0.11,
+            },
+        },
+        "promotion_outcomes": [
+            {
+                "task_id": "chartqa:val:fixture",
+                "seed": 10017,
+                "configuration_hash": "a" * 64,
+                "accepted_version_id": "accepted-v000",
+                "accepted_content_hash": "0" * 64,
+                "candidate_version_id": "candidate:fixture",
+                "candidate_content_hash": "b" * 64,
+                "accepted_correct": True,
+                "candidate_correct": False,
+                "accepted_latency_ms": 100,
+                "candidate_latency_ms": 90,
+                "accepted_input_tokens": 200,
+                "candidate_input_tokens": 220,
+                "accepted_valid": True,
+                "candidate_valid": True,
+            }
+        ],
+    }
+    (tmp_path / "report.json").write_text(json.dumps(report), encoding="utf-8")
+    monkeypatch.setattr(dashboard_module, "LIFECYCLE_ARTIFACT_DIR", tmp_path)
+    monkeypatch.setattr(dashboard_module, "LIFECYCLE_EVENTS_PATH", tmp_path / "events.jsonl")
+
+    lifecycle = dashboard_module._load_lifecycle_dashboard()
+
+    assert lifecycle.promotion_pairs[0].model_dump() == {
+        "task_id": "chartqa:val:fixture",
+        "accepted_correct": True,
+        "candidate_correct": False,
+        "accepted_latency_ms": 100,
+        "candidate_latency_ms": 90,
+        "accepted_input_tokens": 200,
+        "candidate_input_tokens": 220,
+    }
 
 
 def test_dashboard_serves_only_sanitized_calibration_chart(
